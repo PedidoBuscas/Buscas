@@ -532,6 +532,7 @@ div[data-testid="stButton"] > button {
                              SMTP_USER, SMTP_PASS, DESTINATARIOS)
 
     # Configuração de logging
+    os.makedirs("logs", exist_ok=True)
     logging.basicConfig(filename='logs/app.log', level=logging.WARNING,
                         format='%(asctime)s %(levelname)s %(message)s')
 
