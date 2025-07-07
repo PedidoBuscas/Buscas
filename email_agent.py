@@ -85,10 +85,11 @@ class EmailAgent:
             for jdx, classe in enumerate(marcas[0].get('classes', []), 1):
                 classe_num = classe.get('classe', '')
                 especificacao = classe.get('especificacao', '')
-                # Limpeza automática de quebras de palavras
-                especificacao = self._limpar_quebras_palavras(especificacao)
-                especs = [e.strip() for e in re.split(
-                    r'[;\n]', especificacao) if e.strip()]
+                # Primeiro, divide por ; ou \n
+                especs = re.split(r'[;\n]', especificacao)
+                # Depois, limpa cada item individualmente
+                especs = [self._limpar_quebras_palavras(
+                    e.strip()) for e in especs if e.strip()]
                 especs_str = ', '.join(especs)
                 html += f"<div style='margin-top:8px;'><b>Classe {jdx}: {classe_num}</b> - Especificação: {especs_str}</div>"
         # Adicionar observação ao final
