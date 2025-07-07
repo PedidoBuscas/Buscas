@@ -7,8 +7,6 @@ import logging
 
 # Carrega variáveis do .env (caso não tenha sido carregado no app principal)
 load_dotenv()
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 
 class SupabaseAgent:
@@ -20,10 +18,12 @@ class SupabaseAgent:
         """
         Inicializa o cliente Supabase usando variáveis de ambiente.
         """
-        if not SUPABASE_URL or not SUPABASE_KEY:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_KEY")
+        if not url or not key:
             raise ValueError(
                 "SUPABASE_URL e SUPABASE_KEY devem estar definidos no .env")
-        self.client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        self.client: Client = create_client(url, key)
 
     def login(self, email: str, password: str):
         """
@@ -78,7 +78,7 @@ class SupabaseAgent:
         Gera os headers necessários para requisições REST ao Supabase.
         """
         headers = {
-            "apikey": SUPABASE_KEY,
+            "apikey": os.getenv("SUPABASE_KEY"),
             "Authorization": f"Bearer {jwt_token}",
         }
         if content_type:
@@ -90,7 +90,7 @@ class SupabaseAgent:
         Insere uma nova busca na tabela 'buscas' via REST API do Supabase.
         """
         import requests
-        url = f"{SUPABASE_URL}/rest/v1/buscas"
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas"
         headers = self._get_headers(jwt_token, content_type=True)
         resp = requests.post(url, headers=headers, json=busca_data)
         if resp.status_code != 201:
@@ -120,7 +120,7 @@ class SupabaseAgent:
         Busca todas as buscas associadas a um consultor via REST API do Supabase.
         """
         import requests
-        url = f"{SUPABASE_URL}/rest/v1/buscas?consultor_id=eq.{consultor_id}&order=created_at.desc"
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?consultor_id=eq.{consultor_id}&order=created_at.desc"
         headers = self._get_headers(jwt_token)
         resp = requests.get(url, headers=headers)
         if resp.status_code == 200:
@@ -135,7 +135,7 @@ class SupabaseAgent:
         Deleta uma busca pelo ID via REST API do Supabase.
         """
         import requests
-        url = f"{SUPABASE_URL}/rest/v1/buscas?id=eq.{busca_id}"
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
         headers = self._get_headers(jwt_token)
         resp = requests.delete(url, headers=headers)
         if resp.status_code in (200, 204):
@@ -150,7 +150,7 @@ class SupabaseAgent:
         Busca todas as buscas cadastradas via REST API do Supabase.
         """
         import requests
-        url = f"{SUPABASE_URL}/rest/v1/buscas?order=created_at.desc"
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?order=created_at.desc"
         headers = self._get_headers(jwt_token)
         resp = requests.get(url, headers=headers)
         if resp.status_code == 200:
@@ -166,7 +166,7 @@ class SupabaseAgent:
         Apenas o admin pode executar essa ação (controlado pela política RLS).
         """
         import requests
-        url = f"{SUPABASE_URL}/rest/v1/buscas?id=eq.{busca_id}"
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
         headers = self._get_headers(jwt_token, content_type=True)
         data = {"analise_realizada": status}
         resp = requests.patch(url, headers=headers, json=data)
