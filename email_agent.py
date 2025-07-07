@@ -67,7 +67,7 @@ class EmailAgent:
     def _format_body_html(self, form_data):
         """
         Formata o corpo do e-mail em HTML com base nos dados do formulário.
-        Agora cada classe aparece separada e as especificações aparecem em linha, separadas por ponto e vírgula.
+        Agora cada classe aparece separada e as especificações aparecem em linha, separadas por vírgula.
         Aplica limpeza automática de quebras de palavras.
         """
         data = form_data.get('data', '')
@@ -87,9 +87,9 @@ class EmailAgent:
                 especificacao = classe.get('especificacao', '')
                 # Limpeza automática de quebras de palavras
                 especificacao = self._limpar_quebras_palavras(especificacao)
-                especs = [e.strip()
-                          for e in especificacao.split('\n') if e.strip()]
-                especs_str = '; '.join(especs)
+                especs = [e.strip() for e in re.split(
+                    r'[;\n]', especificacao) if e.strip()]
+                especs_str = ', '.join(especs)
                 html += f"<div style='margin-top:8px;'><b>Classe {jdx}: {classe_num}</b> - Especificação: {especs_str}</div>"
         # Adicionar observação ao final
         observacao = form_data.get('observacao', '')
