@@ -19,7 +19,7 @@ st.markdown(
     """
     <style>
     #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
+    /* header {visibility: hidden;} */
     footer {visibility: hidden;}
     .stDeployButton {display: none !important;}
     </style>
