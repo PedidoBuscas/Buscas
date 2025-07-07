@@ -59,8 +59,7 @@ class EmailAgent:
             print("[DEBUG] Erro ao enviar e-mail:", e)
 
     def _limpar_quebras_palavras(self, texto):
-        # Remove quebras de linha e espaços no meio de palavras
-        texto = re.sub(r'(\w)\s*\n\s*(\w)', r'\1\2', texto)
+        # Remove espaços duplos
         texto = re.sub(r' +', ' ', texto)
         return texto
 
@@ -87,7 +86,7 @@ class EmailAgent:
                 especificacao = classe.get('especificacao', '')
                 # Primeiro, divide por ; ou \n
                 especs = re.split(r'[;\n]', especificacao)
-                # Depois, limpa cada item individualmente
+                # Depois, limpa apenas espaços duplos
                 especs = [self._limpar_quebras_palavras(
                     e.strip()) for e in especs if e.strip()]
                 especs_str = ', '.join(especs)
