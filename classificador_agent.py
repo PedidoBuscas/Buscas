@@ -7,7 +7,7 @@ import unicodedata
 
 
 @st.cache_resource
-def carregar_classificador_inpi_json(json_path: str = "classificador_inpi.json") -> List[Dict[str, str]]:
+def carregar_classificador_inpi_json(json_path: str = "classificador_inpi_corrigido.json") -> List[Dict[str, str]]:
     with open(json_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
