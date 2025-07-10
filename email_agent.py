@@ -80,19 +80,17 @@ class EmailAgent:
             <b>Tipo de busca:</b> {tipo_busca}<br>
             <b>Consultor:</b> {consultor}<br>
             <b>E-mail do consultor:</b> {consultor_email}<br><br>
-            <b>Marca:</b> {marcas[0].get('marca', '') if marcas else ''}<br>
         """
         if marcas:
+            html += f"<b>Marca:</b> {marcas[0].get('marca', '')}<br>"
             for jdx, classe in enumerate(marcas[0].get('classes', []), 1):
                 classe_num = classe.get('classe', '')
                 especificacao = classe.get('especificacao', '')
-                # Primeiro, divide por ; ou \n
                 especs = re.split(r'[;\n]', especificacao)
-                # Depois, limpa apenas espaços duplos
                 especs = [self._limpar_quebras_palavras(
                     e.strip()) for e in especs if e.strip()]
                 especs_str = ', '.join(especs)
-                html += f"<div style='margin-top:8px;'><b>Classe {jdx}: {classe_num}</b> - Especificação: {especs_str}</div>"
+                html += f"<div style='margin-top:8px;'><b>{jdx}ª classe: {classe_num}</b> - Especificação: {especs_str}</div>"
         # Adicionar observação ao final
         observacao = form_data.get('observacao', '')
         if observacao:
