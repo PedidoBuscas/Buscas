@@ -40,7 +40,7 @@ def login_screen(supabase_agent):
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 10vh;
+            min-height:1vh;
         }
         .login-title {
             font-size: 2rem;
@@ -143,17 +143,35 @@ def login_screen(supabase_agent):
         try:
             user, jwt_token = supabase_agent.login(email, password)
             if user:
+                # Obter o ID do usuário de forma robusta
+                user_id = user.get('id') if isinstance(
+                    user, dict) else getattr(user, 'id', None)
+                if not user_id:
+                    st.error("Não foi possível obter o ID do usuário.")
+                    return
                 # Carregar classificador INPI do JSON aqui!
                 with st.spinner("Carregando Classificador INPI..."):
                     st.session_state.classificador_inpi = carregar_classificador_inpi_json()
                 st.session_state.user = user
                 st.session_state.jwt_token = jwt_token
+
+                # Buscar perfil do consultor na tabela Perfil
+                perfil = supabase_agent.get_profile(user_id)
+                if perfil:
+                    st.session_state.consultor_nome = perfil.get('name', '')
+                    st.session_state.consultor_email = perfil.get('email', '')
+                else:
+                    st.session_state.consultor_nome = user.get('email', user_id) if isinstance(
+                        user, dict) else getattr(user, 'email', user_id)
+                    st.session_state.consultor_email = st.session_state.consultor_nome
+
                 st.success("Login realizado com sucesso!")
                 st.rerun()
             else:
                 st.error("Login ou senha incorretos. Por favor, tente novamente.")
-        except Exception:
-            st.error("Login ou senha incorretos. Por favor, tente novamente.")
+        except Exception as e:
+            st.error(f"Erro ao tentar logar: {e}")
+
     st.markdown(
         """
         <div class='footer'>© 2025 AGP Consultoria</div>
@@ -567,8 +585,12 @@ div[data-testid="stButton"] > button {
                     form_data, ensure_ascii=False)
                 busca_data["consultor_id"] = st.session_state.user.id
                 busca_data.pop("marcas", None)
+                # Adicionar o e-mail do consultor ao form_data para o e-mail
+                form_data["consultor_email"] = st.session_state.get(
+                    "consultor_email", "")
                 try:
-                    email_agent.send_email(form_data)
+                    with st.spinner("Enviando e-mail..."):
+                        email_agent.send_email(form_data)
                 except Exception as e:
                     st.error(f"Erro ao enviar e-mail: {e}")
                     logging.error(f"Erro ao enviar e-mail: {e}")

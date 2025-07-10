@@ -72,12 +72,14 @@ class EmailAgent:
         data = form_data.get('data', '')
         tipo_busca = form_data.get('tipo_busca', '')
         consultor = form_data.get('consultor', '')
+        consultor_email = form_data.get('consultor_email', '')
         marcas = form_data.get('marcas', [])
         html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
             <b>Data:</b> {data}<br>
             <b>Tipo de busca:</b> {tipo_busca}<br>
-            <b>Consultor:</b> {consultor}<br><br>
+            <b>Consultor:</b> {consultor}<br>
+            <b>E-mail do consultor:</b> {consultor_email}<br><br>
             <b>Marca:</b> {marcas[0].get('marca', '') if marcas else ''}<br>
         """
         if marcas:

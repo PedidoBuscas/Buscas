@@ -40,7 +40,7 @@ class SupabaseAgent:
         """
         Busca o perfil do usuário pelo ID.
         """
-        resp = self.client.table("profiles").select(
+        resp = self.client.table("Perfil").select(
             "*").eq("id", user_id).single().execute()
         return resp.data if resp.data else None
 
@@ -61,9 +61,6 @@ class SupabaseAgent:
         """
         Insere uma nova busca na tabela 'buscas' usando o SDK do Supabase.
         """
-        # Diagnóstico: imprimir usuário autenticado
-        st.write("Usuário autenticado pelo supabase-py:",
-                 self.client.auth.get_user())
         resp = self.client.table("buscas").insert(busca_data).execute()
         if not resp.data:
             st.warning(

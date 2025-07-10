@@ -81,15 +81,23 @@ class FormAgent:
             tipo_busca = st.selectbox("Busca paga ou cortesia", [
                                       "Paga", "Cortesia"], key="tipo_busca")
         with col3:
-            consultores_opcoes = ["Selecione...", "Adrian", "Airton", "Carlos",
-                                  "Global", "Luiz", "Megasult", "Nunes", "Quinho", "Sandro"]
-            consultor_select = st.selectbox(
-                "Consultor (selecione ou digite)", consultores_opcoes, key="consultor_select")
-            consultor_input = st.text_input("Ou digite o nome do consultor", value=st.session_state.get(
-                "consultor", "") if st.session_state.get("consultor", "") not in consultores_opcoes else "", key="consultor_input")
-            consultor = consultor_input.strip(
-            ) if consultor_input.strip() else (consultor_select.strip() if consultor_select != "Selecione..." else "")
+            consultor_nome = st.session_state.get("consultor_nome", "")
+            consultor_email = st.session_state.get("consultor_email", "")
+            st.text_input("Consultor", value=consultor_nome, disabled=True)
+            st.text_input("E-mail", value=consultor_email, disabled=True)
+            consultor = consultor_nome
             st.session_state["consultor"] = consultor
+
+        st.markdown("""
+    <style>
+    input[disabled], .stTextInput input:disabled {
+        color: #005fa3 !important;  /* Azul escuro, igual ao seu tema */
+        background-color: #fff !important;  /* Fundo branco */
+        opacity: 1 !important;  /* Remove o efeito apagado */
+        font-weight: bold !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
         # --- Bloco 2: Consulta ao Classificador INPI ---
         st.markdown(
