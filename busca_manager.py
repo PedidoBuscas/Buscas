@@ -312,10 +312,7 @@ class BuscaManager:
         """Renderiza os botões de ação para uma busca"""
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
-        with col1:
-            if st.button("🗑️ Apagar", key=f"apagar_{busca['id']}"):
-                if self.deletar_busca(busca['id']):
-                    st.rerun()
+        # Removido o botão de apagar busca
 
         if is_admin:
             status_atual = self.get_status_atual(busca)
