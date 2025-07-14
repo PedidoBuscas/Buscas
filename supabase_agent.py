@@ -61,6 +61,11 @@ class SupabaseAgent:
         """
         Insere uma nova busca na tabela 'buscas' usando o SDK do Supabase.
         """
+        # Garante que status_busca está presente
+        if "status_busca" not in busca_data:
+            busca_data["status_busca"] = "pendente"
+        # Remove analise_realizada se existir
+        busca_data.pop("analise_realizada", None)
         resp = self.client.table("buscas").insert(busca_data).execute()
         if not resp.data:
             st.warning(
@@ -87,6 +92,11 @@ class SupabaseAgent:
         Insere uma nova busca na tabela 'buscas' via REST API do Supabase.
         """
         import requests
+        # Garante que status_busca está presente
+        if "status_busca" not in busca_data:
+            busca_data["status_busca"] = "pendente"
+        # Remove analise_realizada se existir
+        busca_data.pop("analise_realizada", None)
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas"
         headers = self._get_headers(jwt_token, content_type=True)
         resp = requests.post(url, headers=headers, json=busca_data)
@@ -157,17 +167,23 @@ class SupabaseAgent:
             logging.error(f"Erro ao buscar buscas: {resp.text}")
             return []
 
-    def update_analise_status(self, busca_id: str, status: bool, jwt_token: str) -> bool:
+    def update_busca_status(self, busca_id: str, status: str, jwt_token: str) -> bool:
         """
-        Atualiza o campo analise_realizada de uma busca pelo ID via REST API do Supabase.
-        Apenas o admin pode executar essa ação (controlado pela política RLS).
+        Atualiza o campo status_busca de uma busca pelo ID via REST API do Supabase.
+        Apenas usuários autorizados podem executar essa ação.
         """
         import requests
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
         headers = self._get_headers(jwt_token, content_type=True)
-        data = {"analise_realizada": status}
+        data = {"status_busca": status}
         resp = requests.patch(url, headers=headers, json=data)
-        return resp.status_code in (200, 204)
+        if resp.status_code in (200, 204):
+            return True
+        else:
+            st.warning(f"Erro ao atualizar status da busca: {resp.text}")
+            logging.error(f"Erro ao atualizar status da busca: {resp.text}")
+            return False
+
 
 # Exemplo de uso:
 # agent = SupabaseAgent()
