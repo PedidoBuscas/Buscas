@@ -312,7 +312,18 @@ class BuscaManager:
         """Renderiza os botões de ação para uma busca"""
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
-        # Removido o botão de apagar busca
+        # Exibir botão de apagar apenas para o admin@agpmarcas.com
+        from config import USUARIOS_ADMIN
+        user_email = None
+        if hasattr(st.session_state.user, 'email'):
+            user_email = st.session_state.user.email
+        elif isinstance(st.session_state.user, dict):
+            user_email = st.session_state.user.get('email')
+        if user_email == 'admin@agpmarcas.com':
+            with col1:
+                if st.button("🗑️ Apagar", key=f"apagar_{busca['id']}"):
+                    if self.deletar_busca(busca['id']):
+                        st.rerun()
 
         if is_admin:
             status_atual = self.get_status_atual(busca)
