@@ -15,24 +15,24 @@ def apply_global_styles():
         .stDeployButton {display: none !important;}
         
         [data-testid="stSidebar"] {
-            background-color: #fff !important;
+            background-color: #35434f !important;
         }
         html, body, [data-testid="stAppViewContainer"], .main, .block-container {
-            background-color: #e5e8ec !important;
+            background-color: #e6e8ec !important;
         }
         .main .block-container {
-            background-color: #e5e8ec !important;
+            background-color: #e6e8ec !important;
         }
         .stMarkdown, .stText, .stSelectbox, .stTextInput, .stButton, .stExpander {
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6 {
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stTextInput > div > input {
             background-color: #fff !important;
-            color: #005fa3 !important;
-            border: 1px solid #ddd !important;
+            color: #35434f !important;
+            border: 1px solid #1caf9a !important;
             height: 40px !important;
             min-height: 40px !important;
             max-height: 40px !important;
@@ -43,17 +43,17 @@ def apply_global_styles():
             line-height: 1.2 !important;
         }
         .stTextInput label {
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stSelectbox > div > div {
             background-color: #fff !important;
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stSelectbox label {
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stButton > button {
-            background-color: #005fa3 !important;
+            background-color: #1caf9a !important;
             color: #fff !important;
             border: none !important;
             border-radius: 8px !important;
@@ -65,21 +65,21 @@ def apply_global_styles():
             max-height: 40px !important;
         }
         .stButton > button:hover {
-            background-color: #0074cc !important;
+            background-color: #35434f !important;
             color: #fff !important;
         }
         .stExpander, .stExpander > div, .stExpander .streamlit-expanderContent {
             background-color: #fff !important;
             border-radius: 12px !important;
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stExpanderHeader {
-            color: #005fa3 !important;
+            color: #35434f !important;
         }
         .stDownloadButton > button {
             background-color: #fff;
-            color: #005fa3;
-            border: 2px solid #005fa3;
+            color: #1caf9a;
+            border: 2px solid #1caf9a;
             border-radius: 8px;
             font-weight: 600;
             padding: 10px 24px;
@@ -87,11 +87,11 @@ def apply_global_styles():
             transition: background 0.2s;
         }
         .stDownloadButton > button:hover {
-            background-color: #005fa3;
+            background-color: #1caf9a;
             color: #fff;
         }
         input[disabled], .stTextInput input:disabled {
-            color: #005fa3 !important;
+            color: #35434f !important;
             background-color: #fff !important;
             opacity: 1 !important;
             font-weight: bold !important;
@@ -113,7 +113,7 @@ def render_login_screen(supabase_agent):
         """
         <style>
         html, body, [data-testid="stAppViewContainer"], .main, .block-container {
-            background-color: #fff !important;
+            background-color: #35434f !important;
         }
         .stTextInput > div > input {
             background-color: #fff !important;
@@ -129,12 +129,12 @@ def render_login_screen(supabase_agent):
             font-size: 2rem;
             font-weight: 700;
             margin-bottom: 10px;
-            color: #005fa3;
+            color: #fff;
             text-align: center;
         }
         .login-subtitle {
             font-size: 1.1rem;
-            color: #005fa3;
+            color: #fff;
             margin-bottom: 24px;
             text-align: center;
         }
@@ -143,17 +143,17 @@ def render_login_screen(supabase_agent):
         }
         .stTextInput > div > input {
             background: #f5f7fa !important;
-            color: #005fa3 !important;
+            color: #35434f !important;
             border-radius: 6px;
-            border: 1.5px solid #005fa3;
+            border: 1.5px solid #1caf9a;
             width: 100% !important;
         }
         .stTextInput label {
-            color: #005fa3 !important;
+            color: #35434f !important;
             font-weight: 600;
         }
         .stButton > button {
-            background-color: #005fa3;
+            background-color: #1caf9a;
             color: #fff;
             border-radius: 6px;
             font-weight: 600;
@@ -163,12 +163,12 @@ def render_login_screen(supabase_agent):
             margin-top: 8px;
         }
         .stButton > button:hover {
-            background-color: #0074cc;
+            background-color: #35434f;
             color: #fff;
         }
         .footer {
             text-align: center;
-            color: #005fa3;
+            color: #35434f;
             margin-top: 32px;
             font-size: 1rem;
         }
@@ -209,7 +209,7 @@ def render_login_screen(supabase_agent):
         unsafe_allow_html=True
     )
 
-    st.image("logo_agp.png", width=120)
+    st.image("Logo_sigepi.png", width=120)
     st.markdown('<div class="login-title">Bem-vindo</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="login-subtitle">Faça seu login</div>',
@@ -268,19 +268,37 @@ def render_login_screen(supabase_agent):
 
 
 def render_sidebar():
-    """Renderiza a sidebar com logo e menu"""
     with st.sidebar:
+        st.markdown(
+            """
+            <style>
+            section[data-testid="stSidebar"] {
+                background-color: #35434f !important;
+            }
+            div[data-testid="stSidebarNav"] {
+                background-color: #35434f !important;
+            }
+            [data-testid="stSidebarContent"] {
+                background-color: #35434f !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
         st.markdown(
             "<div style='text-align:center; width:100%;'>",
             unsafe_allow_html=True
         )
-        st.image("logo_agp.png", width=120)
+        st.image("Logo_sigepi.png", width=120)
         st.markdown("</div>", unsafe_allow_html=True)
         # Exibe o nome do consultor, se estiver logado
         nome = st.session_state.get("consultor_nome", None)
         if nome:
             st.markdown(
-                f"<div style='color:#005fa3;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>👤 {nome}</div>",
+                f"""<div style='color:#fff;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>
+<svg width='20' height='20' viewBox='0 0 24 24' fill='white' xmlns='http://www.w3.org/2000/svg' style='margin-right:6px;'><path d='M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 100-8 4 4 0 000 8z'/></svg>
+{nome}
+</div>""",
                 unsafe_allow_html=True
             )
         from streamlit_option_menu import option_menu
@@ -290,19 +308,19 @@ def render_sidebar():
             icons=["search", "list-task"],
             default_index=0,
             styles={
-                "container": {"padding": "0!important", "background-color": "#fff", "width": "100%"},
-                "icon": {"color": "#005fa3", "font-size": "18px"},
+                "container": {"padding": "0!important", "background-color": "#35434f", "width": "100%"},
+                "icon": {"color": "#fff", "font-size": "18px"},
                 "nav-link": {
                     "font-size": "15px",
                     "text-align": "left",
                     "margin": "2px 0",
-                    "color": "#005fa3",
-                    "background-color": "#fff",
+                    "color": "#fff",
+                    "background-color": "#35434f",
                     "border-radius": "6px",
                     "padding": "8px 16px"
                 },
                 "nav-link-selected": {
-                    "background-color": "#005fa3",
+                    "background-color": "#1caf9a",
                     "color": "#fff",
                     "font-size": "15px",
                     "border-radius": "6px",
