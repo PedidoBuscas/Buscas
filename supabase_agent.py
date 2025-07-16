@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from typing import Optional, List, Dict, Any
 import streamlit as st
 import logging
+import requests
 
 # Carrega variáveis do .env (caso não tenha sido carregado no app principal)
 load_dotenv()
@@ -183,6 +184,41 @@ class SupabaseAgent:
             st.warning(f"Erro ao atualizar status da busca: {resp.text}")
             logging.error(f"Erro ao atualizar status da busca: {resp.text}")
             return False
+
+    def upload_pdf_to_storage(self, file, file_name, jwt_token, bucket="buscaspdf"):
+        """
+        Faz upload de um arquivo PDF para o Supabase Storage via REST API autenticada com o JWT do usuário logado e retorna a URL pública.
+        """
+        url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/{bucket}/{file_name}"
+        headers = {
+            "Authorization": f"Bearer {jwt_token}",
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Content-Type": "application/pdf"
+        }
+        resp = requests.post(url, headers=headers, data=file.getvalue())
+        if resp.status_code not in (200, 201):
+            st.warning(f"Erro ao fazer upload do PDF: {resp.text}")
+            logging.error(f"Erro ao fazer upload do PDF: {resp.text}")
+            raise Exception(f"Erro ao fazer upload: {resp.text}")
+        # Montar a URL pública conforme padrão do seu bucket
+        public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{file_name}"
+        return public_url
+
+    def update_busca_pdf_url(self, busca_id, pdf_url):
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {st.session_state.jwt_token}",
+            "Content-Type": "application/json"
+        }
+        data = {"pdf_buscas": pdf_url}
+        resp = requests.patch(url, headers=headers, json=data)
+        print(f"Status: {resp.status_code}, resp: {resp.text}")
+        if resp.status_code not in (200, 204):
+            st.warning(f"Erro ao atualizar pdf_buscas: {resp.text}")
+            return False
+        return True
 
 
 # Exemplo de uso:

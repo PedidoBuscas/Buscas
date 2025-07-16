@@ -8,6 +8,18 @@ from ui_components import exibir_especificacoes_card
 from config import USUARIOS_ADMIN
 
 
+def get_user_attr(user, attr, default=None):
+    if isinstance(user, dict):
+        return user.get(attr, default)
+    return getattr(user, attr, default)
+
+
+def get_user_id(user):
+    if isinstance(user, dict):
+        return user.get('id')
+    return getattr(user, 'id', None)
+
+
 class BuscaManager:
     """Gerencia operações relacionadas às buscas"""
 
@@ -23,12 +35,7 @@ class BuscaManager:
 
     def verificar_acesso_admin(self, user):
         """Verifica se o usuário tem acesso administrativo"""
-        email = None
-        if hasattr(user, 'email'):
-            email = user.email
-        elif isinstance(user, dict):
-            email = user.get('email')
-        return email in USUARIOS_ADMIN
+        return get_user_attr(user, 'is_admin', False)
 
     def processar_form_data(self, form_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -40,6 +47,9 @@ class BuscaManager:
         Returns:
             Dict com dados processados para salvar
         """
+        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+            st.error("Você precisa estar logado para acessar esta funcionalidade.")
+            st.stop()
         busca_data = dict(form_data)
         busca_data["nome_consultor"] = form_data.get("consultor", "")
         busca_data.pop("consultor", None)
@@ -54,7 +64,7 @@ class BuscaManager:
         # Salvar o dicionário completo no campo dados_completos
         busca_data["dados_completos"] = json.dumps(
             form_data, ensure_ascii=False)
-        busca_data["consultor_id"] = st.session_state.user.id
+        busca_data["consultor_id"] = get_user_id(st.session_state.user)
         busca_data.pop("marcas", None)
 
         # Definir status inicial como pendente (persistente)
@@ -74,6 +84,9 @@ class BuscaManager:
         Returns:
             bool: True se enviado com sucesso
         """
+        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+            st.error("Você precisa estar logado para acessar esta funcionalidade.")
+            st.stop()
         try:
             # Processar dados para salvar
             busca_data = self.processar_form_data(form_data)
@@ -106,6 +119,9 @@ class BuscaManager:
         """
         Busca as buscas do usuário ou todas as buscas do sistema se is_admin=True.
         """
+        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+            st.error("Você precisa estar logado para acessar esta funcionalidade.")
+            st.stop()
         if is_admin:
             return self.supabase_agent.get_all_buscas_rest(st.session_state.jwt_token)
         else:
@@ -145,6 +161,9 @@ class BuscaManager:
         Returns:
             bool: True se deletado com sucesso
         """
+        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+            st.error("Você precisa estar logado para acessar esta funcionalidade.")
+            st.stop()
         ok = self.supabase_agent.delete_busca_rest(
             busca_id, st.session_state.jwt_token)
         if ok:
@@ -158,6 +177,9 @@ class BuscaManager:
         """
         Atualiza o status de uma busca persistindo em status_busca no banco.
         """
+        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+            st.error("Você precisa estar logado para acessar esta funcionalidade.")
+            st.stop()
         ok = self.supabase_agent.update_busca_status(
             busca_id, novo_status, st.session_state.jwt_token)
         if ok:
@@ -248,6 +270,32 @@ class BuscaManager:
             if busca.get('observacao'):
                 st.write(f"Observação: {busca.get('observacao')}")
 
+            # Upload de PDF para admin APENAS se status for EM_ANALISE ou CONCLUIDA
+            if is_admin and status in [self.STATUS_EM_ANALISE, self.STATUS_CONCLUIDA]:
+                st.markdown("---")
+                st.write("Upload do PDF do resultado da busca:")
+                pdf_file = st.file_uploader("Selecione o PDF", type=[
+                                            "pdf"], key=f"pdf_{busca['id']}")
+                if pdf_file is not None and st.button("Enviar PDF", key=f"btn_pdf_{busca['id']}"):
+                    admin_uid = get_user_id(st.session_state.user)
+                    st.info(f"UID do admin logado no upload: {admin_uid}")
+                    file_name = f"{admin_uid}/{busca['id']}.pdf"
+                    url = self.supabase_agent.upload_pdf_to_storage(
+                        pdf_file, file_name, st.session_state.jwt_token
+                    )
+                    self.supabase_agent.update_busca_pdf_url(busca['id'], url)
+                    # Se estiver em análise, já marca como concluída
+                    if status == self.STATUS_EM_ANALISE:
+                        self.atualizar_status_busca(
+                            busca['id'], self.STATUS_CONCLUIDA)
+                    st.success("PDF enviado com sucesso!")
+                    st.rerun()
+
+            # Exibir link de download do PDF se existir
+            if busca.get("pdf_buscas"):
+                st.markdown(
+                    f"[📄 Baixar PDF do resultado]({busca['pdf_buscas']})", unsafe_allow_html=True)
+
             # Botões de ação
             self._renderizar_botoes_acao(busca, is_admin)
 
@@ -321,7 +369,7 @@ class BuscaManager:
             user_email = st.session_state.user.get('email')
         if user_email == 'admin@agpmarcas.com':
             with col1:
-                if st.button("🗑️ Apagar", key=f"apagar_{busca['id']}"):
+                if st.button("��️ Apagar", key=f"apagar_{busca['id']}"):
                     if self.deletar_busca(busca['id']):
                         st.rerun()
 
