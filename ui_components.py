@@ -228,7 +228,7 @@ def render_login_screen(supabase_agent):
     if login_btn:
         try:
             user, jwt_token = supabase_agent.login(email, password)
-            if user:
+            if user and jwt_token:
                 user_id = user.get('id') if isinstance(
                     user, dict) else getattr(user, 'id', None)
                 if not user_id:
@@ -239,17 +239,23 @@ def render_login_screen(supabase_agent):
                 with st.spinner("Carregando Classificador INPI..."):
                     st.session_state.classificador_inpi = carregar_classificador_inpi_json()
 
-                st.session_state.user = user
-                st.session_state.jwt_token = jwt_token
-
                 perfil = supabase_agent.get_profile(user_id)
                 if perfil:
+                    st.session_state.user = perfil  # Sempre um dict!
                     st.session_state.consultor_nome = perfil.get('name', '')
                     st.session_state.consultor_email = perfil.get('email', '')
                 else:
-                    st.session_state.consultor_nome = user.get('email', user_id) if isinstance(
-                        user, dict) else getattr(user, 'email', user_id)
-                    st.session_state.consultor_email = st.session_state.consultor_nome
+                    # Fallback: cria um dict mínimo
+                    st.session_state.user = {
+                        "id": user_id,
+                        "email": user.get('email', user_id) if isinstance(user, dict) else getattr(user, 'email', user_id),
+                        "name": user.get('name', '') if isinstance(user, dict) else getattr(user, 'name', ''),
+                        "is_admin": False
+                    }
+                    st.session_state.consultor_nome = st.session_state.user["email"]
+                    st.session_state.consultor_email = st.session_state.user["email"]
+
+                st.session_state.jwt_token = jwt_token
 
                 st.success("Login realizado com sucesso!")
                 st.rerun()

@@ -6,6 +6,13 @@ from supabase_agent import SupabaseAgent
 from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario
 from busca_manager import BuscaManager
 from config import carregar_configuracoes, configurar_logging
+from busca_manager import get_user_attr
+
+
+def get_user_id(user):
+    if isinstance(user, dict):
+        return user.get('id')
+    return getattr(user, 'id', None)
 
 
 def main():
@@ -76,6 +83,9 @@ def renderizar_pagina_solicitar_busca(form_agent, busca_manager):
 
 def renderizar_pagina_minhas_buscas(busca_manager, is_admin):
     """Renderiza a página de minhas buscas"""
+    if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
+        st.error("Você precisa estar logado para acessar esta funcionalidade.")
+        st.stop()
     st.markdown("<h2>Buscas Solicitadas</h2>", unsafe_allow_html=True)
 
     # Campos de busca
@@ -86,8 +96,9 @@ def renderizar_pagina_minhas_buscas(busca_manager, is_admin):
             "Pesquisar consultor...", key="busca_consultor")
 
     # Buscar buscas do usuário (para exibir)
+    user_id = get_user_id(st.session_state.user)
     buscas = busca_manager.buscar_buscas_usuario(
-        st.session_state.user.id,
+        user_id,
         is_admin=is_admin
     )
     buscas = busca_manager.filtrar_buscas(buscas, busca_marca, busca_consultor)
