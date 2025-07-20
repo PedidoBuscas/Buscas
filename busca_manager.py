@@ -20,6 +20,10 @@ def get_user_id(user):
     return getattr(user, 'id', None)
 
 
+def clean_id(val):
+    return val.strip() if isinstance(val, str) else val
+
+
 class BuscaManager:
     """Gerencia operações relacionadas às buscas"""
 
@@ -65,7 +69,11 @@ class BuscaManager:
         busca_data["dados_completos"] = json.dumps(
             form_data, ensure_ascii=False)
         busca_data["consultor_id"] = get_user_id(st.session_state.user)
+        if busca_data["consultor_id"]:
+            busca_data["consultor_id"] = clean_id(busca_data["consultor_id"])
         busca_data.pop("marcas", None)
+        busca_data["consultor_email"] = st.session_state.get(
+            "consultor_email", "")
 
         # Definir status inicial como pendente (persistente)
         busca_data["status_busca"] = self.STATUS_PENDENTE
@@ -288,6 +296,47 @@ class BuscaManager:
                     if status == self.STATUS_EM_ANALISE:
                         self.atualizar_status_busca(
                             busca['id'], self.STATUS_CONCLUIDA)
+                        # NOVO: Usar o e-mail salvo na busca
+                        consultor_email = busca.get(
+                            'consultor_email', '').strip()
+                        if consultor_email:
+                            pdf_bytes = pdf_file.getvalue()
+
+                            # Extrair dados da busca para o e-mail
+                            marca = busca.get('marca', '')
+                            consultor_nome = busca.get('nome_consultor', '')
+
+                            # Montar assunto do e-mail
+                            assunto = f"Busca Concluída - {marca} - {consultor_nome}"
+
+                            # Montar corpo do e-mail com dados da busca
+                            corpo = f"""<div style="font-family: Arial, sans-serif; font-size: 12pt;">
+Olá,
+
+Segue em anexo o resultado da busca.
+
+Dados da busca:
+- Marca: {marca}
+- Consultor: {consultor_nome}
+- Tipo de busca: {busca.get('tipo_busca', '')}
+- Data: {busca.get('data', '')}
+- Classes: {busca.get('classes', '')}
+- Especificações: {busca.get('especificacoes', '')}
+
+Atenciosamente,
+Equipe AGP Consultoria
+</div>"""
+
+                            self.email_agent.send_email_com_anexo(
+                                destinatario=consultor_email,
+                                assunto=assunto,
+                                corpo=corpo,
+                                anexo_bytes=pdf_bytes,
+                                nome_arquivo=f"busca_{busca['id']}.pdf"
+                            )
+                        else:
+                            st.warning(
+                                f"E-mail do consultor não encontrado na busca (busca id: {busca.get('id')})")
                     st.success("PDF enviado com sucesso!")
                     st.rerun()
 
@@ -393,15 +442,6 @@ class BuscaManager:
                 # Não mostra botão se já está concluída
             st.markdown(
                 f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {self.get_status_icon(status_atual)} {self.get_status_display(status_atual)}</div>", unsafe_allow_html=True)
-
-        with col4:
-            pdf_bytes = gerar_pdf_busca(busca)
-            st.download_button(
-                "📄 Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"busca_{busca.get('id', '')}.pdf",
-                mime="application/pdf"
-            )
 
     def ordenar_buscas_prioridade(self, buscas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Ordena buscas: Em Análise primeiro, depois Recebida, depois Pendente; dentro de cada status, Paga antes de Cortesia, depois por data."""

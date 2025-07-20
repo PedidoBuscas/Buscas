@@ -38,18 +38,19 @@ class SupabaseAgent:
         return resp.user if resp.user else None, jwt_token
 
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Busca o perfil do usuário pelo ID.
-        """
-        resp = self.client.table("Perfil").select(
-            "*").eq("id", user_id).single().execute()
-        return resp.data if resp.data else None
+        try:
+            resp = self.client.table('perfil').select(
+                "*").eq("id", user_id).single().execute()
+            return resp.data if resp.data else None
+        except Exception as e:
+            logging.error(f"Erro ao buscar perfil para user_id={user_id}: {e}")
+            return None
 
     def update_profile(self, user_id: str, data: Dict[str, Any]) -> bool:
         """
         Atualiza o perfil do usuário com os dados fornecidos.
         """
-        resp = self.client.table("profiles").update(
+        resp = self.client.table('perfil').update(
             data).eq("id", user_id).execute()
         if not resp.data:
             st.warning("Erro ao atualizar perfil: resposta vazia do Supabase.")
@@ -214,7 +215,6 @@ class SupabaseAgent:
         }
         data = {"pdf_buscas": pdf_url}
         resp = requests.patch(url, headers=headers, json=data)
-        print(f"Status: {resp.status_code}, resp: {resp.text}")
         if resp.status_code not in (200, 204):
             st.warning(f"Erro ao atualizar pdf_buscas: {resp.text}")
             return False

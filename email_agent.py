@@ -20,12 +20,6 @@ class EmailAgent:
         """
         Envia um e-mail com os dados do formulário de busca para os destinatários configurados.
         """
-        # Debug SMTP vars
-        print("[DEBUG] SMTP_HOST:", self.smtp_host)
-        print("[DEBUG] SMTP_PORT:", self.smtp_port)
-        print("[DEBUG] SMTP_USER:", self.smtp_user)
-        print("[DEBUG] SMTP_PASS:", self.smtp_pass)
-        print("[DEBUG] DESTINATARIOS:", self.destinatarios)
         # Extrair dados principais
         tipo_busca = form_data.get('tipo_busca', '')
         consultor = form_data.get('consultor', '')
@@ -56,7 +50,25 @@ class EmailAgent:
         except Exception as e:
             st.error(f"Erro ao enviar e-mail: {e}")
             logging.error(f"Erro ao enviar e-mail: {e}")
-            print("[DEBUG] Erro ao enviar e-mail:", e)
+
+    def send_email_com_anexo(self, destinatario, assunto, corpo, anexo_bytes, nome_arquivo):
+        msg = EmailMessage()
+        msg["Subject"] = assunto
+        msg["From"] = self.smtp_user
+        msg["To"] = destinatario
+        msg.set_content(corpo)
+        # Anexar PDF
+        msg.add_attachment(anexo_bytes, maintype="application",
+                           subtype="pdf", filename=nome_arquivo)
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_pass)
+                server.send_message(msg)
+            st.success(f"E-mail enviado com sucesso para: {destinatario}")
+        except Exception as e:
+            st.error(f"Erro ao enviar e-mail: {e}")
+            logging.error(f"Erro ao enviar e-mail: {e}")
 
     def _limpar_quebras_palavras(self, texto):
         # Remove espaços duplos

@@ -306,8 +306,6 @@ class FormAgent:
                         f"classe_{i}_{j}_{nonce}", "").strip()
                     especificacao_val = st.session_state.get(
                         f"especificacao_{i}_{j}_{nonce}", "").strip()
-                    st.write(
-                        f"[DEBUG] Valor lido para classe_{i}_{j}_{nonce}: '{classe_val}'")
                     if not classe_val:
                         st.error("O campo Classe deve ser preenchido.")
                         return None
