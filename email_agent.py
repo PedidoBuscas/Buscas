@@ -56,10 +56,33 @@ class EmailAgent:
         msg["Subject"] = assunto
         msg["From"] = self.smtp_user
         msg["To"] = destinatario
-        msg.set_content(corpo)
+        msg.set_content(corpo, subtype='html')
         # Anexar PDF
         msg.add_attachment(anexo_bytes, maintype="application",
                            subtype="pdf", filename=nome_arquivo)
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_pass)
+                server.send_message(msg)
+            st.success(f"E-mail enviado com sucesso para: {destinatario}")
+        except Exception as e:
+            st.error(f"Erro ao enviar e-mail: {e}")
+            logging.error(f"Erro ao enviar e-mail: {e}")
+
+    def send_email_multiplos_anexos(self, destinatario, assunto, corpo, anexos):
+        """
+        Envia um e-mail com múltiplos anexos.
+        anexos: lista de tuplas (anexo_bytes, nome_arquivo)
+        """
+        msg = EmailMessage()
+        msg["Subject"] = assunto
+        msg["From"] = self.smtp_user
+        msg["To"] = destinatario
+        msg.set_content(corpo, subtype='html')
+        for anexo_bytes, nome_arquivo in anexos:
+            msg.add_attachment(anexo_bytes, maintype="application",
+                               subtype="pdf", filename=nome_arquivo)
         try:
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()

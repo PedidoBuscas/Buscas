@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from pdf_generator import gerar_pdf_busca
 from ui_components import exibir_especificacoes_card
 from config import USUARIOS_ADMIN
+import unicodedata
 
 
 def get_user_attr(user, attr, default=None):
@@ -289,7 +290,15 @@ class BuscaManager:
                     st.info(f"UID do admin logado no upload: {admin_uid}")
                     pdf_urls = []
                     for file in uploaded_files:
-                        file_name = f"{admin_uid}/{busca['id']}_{file.name}"
+                        # Normalizar nome do arquivo: remover acentos, espaços e caracteres especiais
+                        def normalize_filename(filename):
+                            filename = unicodedata.normalize('NFKD', filename).encode(
+                                'ASCII', 'ignore').decode('ASCII')
+                            filename = re.sub(
+                                r'[^a-zA-Z0-9_.-]', '_', filename)
+                            return filename
+                        file_name = normalize_filename(
+                            f"{busca['id']}_{file.name}")
                         url = self.supabase_agent.upload_pdf_to_storage(
                             file, file_name, st.session_state.jwt_token)
                         pdf_urls.append(url)
@@ -304,19 +313,30 @@ class BuscaManager:
                         consultor_email = busca.get(
                             'consultor_email', '').strip()
                         if consultor_email:
+                            anexos = []
                             for file in uploaded_files:
                                 pdf_bytes = file.getvalue()
-                                marca = busca.get('marca', '')
-                                consultor_nome = busca.get(
-                                    'nome_consultor', '')
-                                assunto = f"Busca Concluída - {marca} - {consultor_nome}"
-                                corpo = f"""<div style=\"font-family: Arial, sans-serif; font-size: 12pt;\">\nOlá,\n\nSegue em anexo o resultado da busca.\n\nDados da busca:\n- Marca: {marca}\n- Consultor: {consultor_nome}\n- Tipo de busca: {busca.get('tipo_busca', '')}\n- Data: {busca.get('data', '')}\n- Classes: {busca.get('classes', '')}\n- Especificações: {busca.get('especificacoes', '')}\n\nAtenciosamente,\nEquipe AGP Consultoria\n</div>"""
+                                # Nome do arquivo no e-mail: apenas o nome original normalizado
+                                email_file_name = normalize_filename(file.name)
+                                anexos.append((pdf_bytes, email_file_name))
+                            marca = busca.get('marca', '')
+                            consultor_nome = busca.get('nome_consultor', '')
+                            assunto = f"Busca Concluída - {marca} - {consultor_nome}"
+                            corpo = f"""<div style='font-family: Arial; font-size: 12pt;'>Olá,<br><br>Segue em anexo o resultado da busca.<br><br>Dados da busca:<br>- Marca: {marca}<br>- Consultor: {consultor_nome}<br>- Tipo de busca: {busca.get('tipo_busca', '')}<br>- Data: {busca.get('data', '')}<br>- Classes: {busca.get('classes', '')}<br>- Especificações: {busca.get('especificacoes', '')}<br><br>Atenciosamente,<br>Equipe AGP Consultoria</div>"""
+                            if len(anexos) > 1:
+                                self.email_agent.send_email_multiplos_anexos(
+                                    destinatario=consultor_email,
+                                    assunto=assunto,
+                                    corpo=corpo,
+                                    anexos=anexos
+                                )
+                            else:
                                 self.email_agent.send_email_com_anexo(
                                     destinatario=consultor_email,
                                     assunto=assunto,
                                     corpo=corpo,
-                                    anexo_bytes=pdf_bytes,
-                                    nome_arquivo=f"busca_{busca['id']}_{file.name}"
+                                    anexo_bytes=anexos[0][0],
+                                    nome_arquivo=anexos[0][1]
                                 )
                         else:
                             st.warning(
