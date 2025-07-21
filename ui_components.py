@@ -107,6 +107,83 @@ def apply_global_styles():
     )
 
 
+def apply_sidebar_styles():
+    import streamlit as st
+    st.markdown("""
+    <style>
+    .sidebar-module-group {
+        background: #2a3a48;
+        border-radius: 16px;
+        margin-bottom: 18px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        padding: 10px 0 6px 0;
+        border: 2px solid #1caf9a;
+        /* Removido outline, border extra ou height/min-height que criava círculo */
+    }
+    .sidebar-module-btn {
+        width: 92% !important;
+        margin-left: 4%;
+        min-height: 38px !important;
+        font-size: 1.08rem !important;
+        font-weight: 600;
+        margin-bottom: 8px;
+        background-color: #1caf9a;
+        color: #fff !important;
+        border-radius: 10px;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        transition: background 0.2s;
+    }
+    .sidebar-module-btn.inactive {
+        background-color: #35434f;
+        color: #fff !important;
+        border: 2px solid #1caf9a;
+        opacity: 0.85;
+    }
+    .sidebar-module-btn .emoji {
+        margin-right: 10px;
+        font-size: 1.3em;
+    }
+    .sidebar-opcao-btn {
+        width: 86% !important;
+        margin-left: 7%;
+        min-height: 36px !important;
+        font-size: 1.02rem !important;
+        font-weight: 500;
+        margin-bottom: 6px;
+        background-color: #1caf9a;
+        color: #fff !important;
+        border-radius: 8px;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        transition: background 0.2s;
+    }
+    .sidebar-opcao-btn.inactive {
+        background-color: #35434f;
+        color: #fff !important;
+        border: 2px solid #1caf9a;
+        opacity: 0.85;
+    }
+    .sidebar-radio label, .sidebar-radio span {
+        color: #fff !important;
+        font-size: 1.1rem;
+    }
+    .sidebar-radio .stRadio > div { color: #fff !important; }
+    .stButton > button {
+        width: 100% !important;
+        min-height: 38px !important;
+        font-size: 1.08rem !important;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
 def render_login_screen(supabase_agent):
     """Renderiza a tela de login"""
     st.markdown(
@@ -273,68 +350,119 @@ def render_login_screen(supabase_agent):
     )
 
 
-def render_sidebar():
-    with st.sidebar:
+def render_sidebar(modulos=None):
+    """
+    Renderiza o conteúdo da sidebar com múltiplos módulos, cada um como botão estilizado. Só mostra o menu de opções do módulo ativo.
+    Esta função NÃO deve abrir o bloco 'with st.sidebar:'.
+    modulos: lista de dicts, cada um com 'nome', 'icone', 'emoji', 'opcoes' (lista de dicts com 'nome' e 'icone')
+    Retorna (modulo_selecionado, opcao_selecionada)
+    """
+    from streamlit_option_menu import option_menu
+    st.markdown(
+        """
+        <style>
+        .sidebar-module-btn {
+            width: 100%;
+            min-height: 40px;
+            font-size: 1.08rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            background-color: #35434f;
+            color: #fff !important;
+            border-radius: 10px;
+            border: 2px solid #1caf9a;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            transition: background 0.2s;
+            padding-left: 16px;
+        }
+        .sidebar-module-btn.active {
+            background-color: #1caf9a !important;
+            color: #fff !important;
+            border: 2px solid #fff;
+        }
+        .sidebar-module-btn .emoji {
+            margin-right: 10px;
+            font-size: 1.3em;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<div style='text-align:center; width:100%;'>",
+        unsafe_allow_html=True
+    )
+    st.image("Logo_sigepi.png", width=120)
+    st.markdown("</div>", unsafe_allow_html=True)
+    nome = st.session_state.get("consultor_nome", None)
+    if nome:
         st.markdown(
-            """
-            <style>
-            section[data-testid="stSidebar"] {
-                background-color: #35434f !important;
-            }
-            div[data-testid="stSidebarNav"] {
-                background-color: #35434f !important;
-            }
-            [data-testid="stSidebarContent"] {
-                background-color: #35434f !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        st.markdown(
-            "<div style='text-align:center; width:100%;'>",
-            unsafe_allow_html=True
-        )
-        st.image("Logo_sigepi.png", width=120)
-        st.markdown("</div>", unsafe_allow_html=True)
-        # Exibe o nome do consultor, se estiver logado
-        nome = st.session_state.get("consultor_nome", None)
-        if nome:
-            st.markdown(
-                f"""<div style='color:#fff;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>
+            f"""<div style='color:#fff;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>
 <svg width='20' height='20' viewBox='0 0 24 24' fill='white' xmlns='http://www.w3.org/2000/svg' style='margin-right:6px;'><path d='M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 100-8 4 4 0 000 8z'/></svg>
 {nome}
 </div>""",
-                unsafe_allow_html=True
-            )
-        from streamlit_option_menu import option_menu
-        menu = option_menu(
-            menu_title=None,
-            options=["Solicitar Busca", "Minhas Buscas"],
-            icons=["search", "list-task"],
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "#35434f", "width": "100%"},
-                "icon": {"color": "#fff", "font-size": "18px"},
-                "nav-link": {
-                    "font-size": "15px",
-                    "text-align": "left",
-                    "margin": "2px 0",
-                    "color": "#fff",
-                    "background-color": "#35434f",
-                    "border-radius": "6px",
-                    "padding": "8px 16px"
-                },
-                "nav-link-selected": {
-                    "background-color": "#1caf9a",
-                    "color": "#fff",
-                    "font-size": "15px",
-                    "border-radius": "6px",
-                    "padding": "8px 16px"
-                },
-            }
+            unsafe_allow_html=True
         )
-        return menu
+    if not modulos:
+        modulos = [
+            {
+                'nome': 'Marcas',
+                'icone': 'tag',
+                'emoji': '🏷️',
+                'opcoes': [
+                    {'nome': 'Solicitar Busca', 'icone': 'search'},
+                    {'nome': 'Minhas Buscas', 'icone': 'list-task'}
+                ]
+            }
+        ]
+    # Controle de módulo ativo
+    if 'modulo_ativo' not in st.session_state or st.session_state['modulo_ativo'] not in [m['nome'] for m in modulos]:
+        st.session_state['modulo_ativo'] = modulos[0]['nome']
+    modulo_ativo = st.session_state['modulo_ativo']
+    modulo_selecionado = modulo_ativo
+    # Renderizar botões de módulos
+    for modulo in modulos:
+        is_active = modulo['nome'] == modulo_ativo
+        btn_label = f"{modulo.get('emoji', '')} {modulo['nome']}"
+        if st.button(btn_label, key=f"btn_modulo_{modulo['nome']}"):
+            st.session_state['modulo_ativo'] = modulo['nome']
+            st.rerun()
+    # Só mostrar opções do módulo ativo
+    modulo = next(
+        m for m in modulos if m['nome'] == st.session_state['modulo_ativo'])
+    st.markdown(
+        f"<div style='margin:18px 0 0 0;'><b style='color:#1caf9a;font-size:1.08rem;'><span style='margin-right:7px;'>{modulo.get('emoji', '')}</span>{modulo['nome']}</b></div>", unsafe_allow_html=True)
+    opcoes = [op['nome'] for op in modulo['opcoes']]
+    icones = [op['icone'] for op in modulo['opcoes']]
+    escolha = option_menu(
+        menu_title=None,
+        options=opcoes,
+        icons=icones,
+        key=f"menu_{modulo['nome']}",
+        styles={
+            "container": {"padding": "0!important", "background-color": "#35434f", "width": "100%"},
+            "icon": {"color": "#fff", "font-size": "18px"},
+            "nav-link": {
+                "font-size": "15px",
+                "text-align": "left",
+                "margin": "2px 0",
+                "color": "#fff",
+                "background-color": "#35434f",
+                "border-radius": "6px",
+                "padding": "8px 16px"
+            },
+            "nav-link-selected": {
+                "background-color": "#1caf9a",
+                "color": "#fff",
+                "font-size": "15px",
+                "border-radius": "6px",
+                "padding": "8px 16px"
+            },
+        }
+    )
+    return modulo['nome'], escolha
 
 
 def limpar_formulario():
@@ -432,3 +560,40 @@ def exibir_especificacoes_pdf(busca, pdf):
             pdf.multi_cell(0, 10, "Especificações: Sem especificações")
     else:
         pdf.multi_cell(0, 10, "Especificações: Sem especificações")
+
+    st.markdown(
+        """
+        <style>
+        .stButton > button {
+            background-color: #1caf9a !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-weight: 600;
+            font-size: 1.1rem !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            max-height: 40px !important;
+            margin-bottom: 8px;
+            width: 100% !important;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            padding-left: 16px;
+        }
+        .stButton > button:hover {
+            background-color: #35434f !important;
+            color: #fff !important;
+        }
+        /* Botão do módulo ativo (primeiro botão após login) */
+        .stButton > button:focus:not(:active),
+        .stButton > button:active {
+            background-color: #35434f !important;
+            color: #fff !important;
+            border: 2px solid #fff !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )

@@ -282,16 +282,20 @@ class BuscaManager:
             if is_admin and status in [self.STATUS_EM_ANALISE, self.STATUS_CONCLUIDA]:
                 st.markdown("---")
                 st.write("Upload do PDF do resultado da busca:")
-                pdf_file = st.file_uploader("Selecione o PDF", type=[
-                                            "pdf"], key=f"pdf_{busca['id']}")
-                if pdf_file is not None and st.button("Enviar PDF", key=f"btn_pdf_{busca['id']}"):
+                uploaded_files = st.file_uploader("Selecione os PDFs", type=[
+                                                  "pdf"], accept_multiple_files=True, key=f"pdf_{busca['id']}")
+                if uploaded_files and st.button("Enviar PDF(s)", key=f"btn_pdf_{busca['id']}"):
                     admin_uid = get_user_id(st.session_state.user)
                     st.info(f"UID do admin logado no upload: {admin_uid}")
-                    file_name = f"{admin_uid}/{busca['id']}.pdf"
-                    url = self.supabase_agent.upload_pdf_to_storage(
-                        pdf_file, file_name, st.session_state.jwt_token
-                    )
-                    self.supabase_agent.update_busca_pdf_url(busca['id'], url)
+                    pdf_urls = []
+                    for file in uploaded_files:
+                        file_name = f"{admin_uid}/{busca['id']}_{file.name}"
+                        url = self.supabase_agent.upload_pdf_to_storage(
+                            file, file_name, st.session_state.jwt_token)
+                        pdf_urls.append(url)
+                    # Atualiza pdf_buscas como lista de URLs
+                    self.supabase_agent.update_busca_pdf_url(
+                        busca['id'], pdf_urls)
                     # Se estiver em análise, já marca como concluída
                     if status == self.STATUS_EM_ANALISE:
                         self.atualizar_status_busca(
@@ -300,50 +304,35 @@ class BuscaManager:
                         consultor_email = busca.get(
                             'consultor_email', '').strip()
                         if consultor_email:
-                            pdf_bytes = pdf_file.getvalue()
-
-                            # Extrair dados da busca para o e-mail
-                            marca = busca.get('marca', '')
-                            consultor_nome = busca.get('nome_consultor', '')
-
-                            # Montar assunto do e-mail
-                            assunto = f"Busca Concluída - {marca} - {consultor_nome}"
-
-                            # Montar corpo do e-mail com dados da busca
-                            corpo = f"""<div style="font-family: Arial, sans-serif; font-size: 12pt;">
-Olá,
-
-Segue em anexo o resultado da busca.
-
-Dados da busca:
-- Marca: {marca}
-- Consultor: {consultor_nome}
-- Tipo de busca: {busca.get('tipo_busca', '')}
-- Data: {busca.get('data', '')}
-- Classes: {busca.get('classes', '')}
-- Especificações: {busca.get('especificacoes', '')}
-
-Atenciosamente,
-Equipe AGP Consultoria
-</div>"""
-
-                            self.email_agent.send_email_com_anexo(
-                                destinatario=consultor_email,
-                                assunto=assunto,
-                                corpo=corpo,
-                                anexo_bytes=pdf_bytes,
-                                nome_arquivo=f"busca_{busca['id']}.pdf"
-                            )
+                            for file in uploaded_files:
+                                pdf_bytes = file.getvalue()
+                                marca = busca.get('marca', '')
+                                consultor_nome = busca.get(
+                                    'nome_consultor', '')
+                                assunto = f"Busca Concluída - {marca} - {consultor_nome}"
+                                corpo = f"""<div style=\"font-family: Arial, sans-serif; font-size: 12pt;\">\nOlá,\n\nSegue em anexo o resultado da busca.\n\nDados da busca:\n- Marca: {marca}\n- Consultor: {consultor_nome}\n- Tipo de busca: {busca.get('tipo_busca', '')}\n- Data: {busca.get('data', '')}\n- Classes: {busca.get('classes', '')}\n- Especificações: {busca.get('especificacoes', '')}\n\nAtenciosamente,\nEquipe AGP Consultoria\n</div>"""
+                                self.email_agent.send_email_com_anexo(
+                                    destinatario=consultor_email,
+                                    assunto=assunto,
+                                    corpo=corpo,
+                                    anexo_bytes=pdf_bytes,
+                                    nome_arquivo=f"busca_{busca['id']}_{file.name}"
+                                )
                         else:
                             st.warning(
                                 f"E-mail do consultor não encontrado na busca (busca id: {busca.get('id')})")
-                    st.success("PDF enviado com sucesso!")
+                    st.success("PDF(s) enviado(s) com sucesso!")
                     st.rerun()
 
-            # Exibir link de download do PDF se existir
+            # Exibir links de download dos PDFs se existirem
             if busca.get("pdf_buscas"):
-                st.markdown(
-                    f"[📄 Baixar PDF do resultado]({busca['pdf_buscas']})", unsafe_allow_html=True)
+                pdfs = busca["pdf_buscas"]
+                if isinstance(pdfs, str):
+                    pdfs = [pdfs]
+                st.markdown("**PDF(s) do resultado:**")
+                for i, url in enumerate(pdfs):
+                    st.markdown(f"[📄 PDF {i+1}]({url})",
+                                unsafe_allow_html=True)
 
             # Botões de ação
             self._renderizar_botoes_acao(busca, is_admin)

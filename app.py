@@ -1,30 +1,20 @@
 # app.py
 import streamlit as st
+from marcas import views as marcas_views
+from patentes import views as patentes_views
+from marcas.busca_manager import BuscaManager, get_user_attr
 from form_agent import FormAgent
 from email_agent import EmailAgent
 from supabase_agent import SupabaseAgent
-from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario
-from busca_manager import BuscaManager
+from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario, apply_sidebar_styles
 from config import carregar_configuracoes, configurar_logging
-from busca_manager import get_user_attr
-
-
-def get_user_id(user):
-    if isinstance(user, dict):
-        return user.get('id')
-    return getattr(user, 'id', None)
 
 
 def main():
-    """Função principal da aplicação"""
-    # Carregar configurações
     config = carregar_configuracoes()
     configurar_logging()
-
-    # Aplicar estilos globais
     apply_global_styles()
 
-    # Inicializar agentes
     supabase_agent = SupabaseAgent()
     email_agent = EmailAgent(
         config["smtp_host"],
@@ -36,131 +26,90 @@ def main():
     busca_manager = BuscaManager(supabase_agent, email_agent)
     form_agent = FormAgent()
 
-    # Tela de login
     if "user" not in st.session_state:
         render_login_screen(supabase_agent)
         return
-
-    # Controle de envio para bloquear ações
     if "enviando_pedido" not in st.session_state:
         st.session_state.enviando_pedido = False
 
-    # Renderizar sidebar e obter menu selecionado
-    menu = render_sidebar()
+    # Menu lateral único com todas as opções
+    opcoes_menu = [
+        'Solicitar Busca',
+        'Minhas Buscas',
+        'Solicitar Patente',
+        'Depósito Patente',
+        'Minhas Patentes'
+    ]
+    icones_menu = [
+        'search',            # Solicitar Busca
+        'list-task',         # Minhas Buscas
+        'file-earmark-plus',  # Solicitar Patente
+        'file-earmark-arrow-up',  # Depósito Patente
+        'file-earmark-text'  # Minhas Patentes
+    ]
+    with st.sidebar:
+        # Adicionar logo e nome do consultor
+        st.image("Logo_sigepi.png", width=120)
+        nome = st.session_state.get("consultor_nome", None)
+        if nome:
+            st.markdown(
+                f"<div style='color:#fff;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>"
+                f"<span style='font-size:1.3em;margin-right:7px;vertical-align:middle;'>"
+                f"<svg width='22' height='22' viewBox='0 0 24 24' fill='white' xmlns='http://www.w3.org/2000/svg' style='display:inline-block;vertical-align:middle;'><path d='M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 100-8 4 4 0 000 8z'/></svg>"
+                f"</span>{nome}</div>",
+                unsafe_allow_html=True
+            )
+        from streamlit_option_menu import option_menu
+        escolha = option_menu(
+            menu_title=None,
+            options=opcoes_menu,
+            icons=icones_menu,
+            key="menu_unico",
+            styles={
+                "container": {"padding": "0!important", "background-color": "#35434f", "width": "100%"},
+                "icon": {"color": "#fff", "font-size": "18px"},
+                "nav-link": {
+                    "font-size": "15px",
+                    "text-align": "left",
+                    "margin": "2px 0",
+                    "color": "#fff",
+                    "background-color": "#35434f",
+                    "border-radius": "6px",
+                    "padding": "8px 16px"
+                },
+                "nav-link-selected": {
+                    "background-color": "#1caf9a",
+                    "color": "#fff",
+                    "font-size": "15px",
+                    "border-radius": "6px",
+                    "padding": "8px 16px"
+                },
+            }
+        )
 
-    # Verificar se é admin usando o BuscaManager
-    is_admin = busca_manager.verificar_acesso_admin(st.session_state.user)
+    # Verificar se o usuário é admin
+    is_admin = get_user_attr(st.session_state.user, 'is_admin', False)
 
-    # Navegação baseada no menu
-    if menu == "Solicitar Busca":
-        renderizar_pagina_solicitar_busca(form_agent, busca_manager)
-    elif menu == "Minhas Buscas":
-        renderizar_pagina_minhas_buscas(busca_manager, is_admin)
-
-
-def renderizar_pagina_solicitar_busca(form_agent, busca_manager):
-    """Renderiza a página de solicitar busca"""
-    if st.session_state.get('enviando_pedido', False):
-        # Overlay será mostrado pelo form_agent
-        form_agent.collect_data()  # para garantir overlay
-        with st.spinner("Enviando pedido de busca..."):
-            pass  # Removido salvamento duplicado
-        st.session_state.enviando_pedido = False
-        limpar_formulario()
-        st.session_state["form_nonce"] = st.session_state.get(
-            "form_nonce", 0) + 1
-        st.rerun()
-    else:
-        form_data = form_agent.collect_data()
-        if form_data and st.session_state.get('envio_sucesso', False):
-            st.session_state['last_form_data'] = form_data
-            st.session_state.enviando_pedido = True
-
-            # Enviar busca usando o manager
-            if busca_manager.enviar_busca(form_data):
-                st.rerun()
-
-
-def renderizar_pagina_minhas_buscas(busca_manager, is_admin):
-    """Renderiza a página de minhas buscas"""
-    if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
-        st.error("Você precisa estar logado para acessar esta funcionalidade.")
-        st.stop()
-    st.markdown("<h2>Buscas Solicitadas</h2>", unsafe_allow_html=True)
-
-    # Campos de busca
-    busca_marca = st.text_input("Pesquisar marca...", key="busca_marca")
-    busca_consultor = None
-    if is_admin:
-        busca_consultor = st.text_input(
-            "Pesquisar consultor...", key="busca_consultor")
-
-    # Buscar buscas do usuário (para exibir)
-    user_id = get_user_id(st.session_state.user)
-    buscas = busca_manager.buscar_buscas_usuario(
-        user_id,
-        is_admin=is_admin
-    )
-    buscas = busca_manager.filtrar_buscas(buscas, busca_marca, busca_consultor)
-    # Ordenar por prioridade
-    buscas = busca_manager.ordenar_buscas_prioridade(buscas)
-
-    # Buscar todas as buscas para a fila global (para contagem)
-    todas_buscas_fila = busca_manager.buscar_buscas_usuario(is_admin=True)
-    todas_buscas_fila = busca_manager.filtrar_buscas(
-        todas_buscas_fila, busca_marca, None)
-    # Ordenar por prioridade
-    todas_buscas_fila = busca_manager.ordenar_buscas_prioridade(
-        todas_buscas_fila)
-
-    # Organizar buscas por status
-    buscas_por_status = busca_manager.separar_buscas_por_status(buscas)
-
-    if is_admin:
-        abas = []
-        labels = []
-        status_keys = [
-            (busca_manager.STATUS_PENDENTE, "Pendentes"),
-            (busca_manager.STATUS_RECEBIDA, "Recebidas"),
-            (busca_manager.STATUS_EM_ANALISE, "Em Análise"),
-            (busca_manager.STATUS_CONCLUIDA, "Concluídas")
-        ]
-        for status, label in status_keys:
-            buscas_status = buscas_por_status[status]
-            if buscas_status:
-                labels.append(label)
-                abas.append(buscas_status)
-        if not abas:
-            st.info("Nenhuma busca realizada ainda.")
-            return
-        tabs = st.tabs(labels)
-        for i, tab in enumerate(tabs):
-            with tab:
-                for busca in abas[i]:
-                    busca_manager.renderizar_busca(
-                        busca, is_admin, todas_buscas=todas_buscas_fila)
-    else:
-        enviadas = buscas_por_status[busca_manager.STATUS_PENDENTE] + \
-            buscas_por_status[busca_manager.STATUS_RECEBIDA] + \
-            buscas_por_status[busca_manager.STATUS_EM_ANALISE]
-        concluidas = buscas_por_status[busca_manager.STATUS_CONCLUIDA]
-        abas = []
-        labels = []
-        if enviadas:
-            labels.append("Enviadas")
-            abas.append(enviadas)
-        if concluidas:
-            labels.append("Concluídas")
-            abas.append(concluidas)
-        if not abas:
-            st.info("Nenhuma busca realizada ainda.")
-            return
-        tabs = st.tabs(labels)
-        for i, tab in enumerate(tabs):
-            with tab:
-                for busca in abas[i]:
-                    busca_manager.renderizar_busca(
-                        busca, is_admin, todas_buscas=todas_buscas_fila)
+    # Renderizar a página selecionada
+    if escolha == "Solicitar Busca":
+        if st.session_state.enviando_pedido:
+            st.warning("Aguarde, enviando pedido...")
+        else:
+            form_data = form_agent.collect_data()
+            if form_data:
+                st.session_state.enviando_pedido = True
+                ok = busca_manager.enviar_busca(form_data)
+                if ok:
+                    limpar_formulario()
+                st.session_state.enviando_pedido = False
+    elif escolha == "Minhas Buscas":
+        marcas_views.minhas_buscas(busca_manager, is_admin)
+    elif escolha == "Solicitar Patente":
+        patentes_views.solicitar_patente()
+    elif escolha == "Depósito Patente":
+        patentes_views.deposito_patente()
+    elif escolha == "Minhas Patentes":
+        patentes_views.minhas_patentes()
 
 
 if __name__ == "__main__":

@@ -205,7 +205,7 @@ class SupabaseAgent:
         public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{file_name}"
         return public_url
 
-    def update_busca_pdf_url(self, busca_id, pdf_url):
+    def update_busca_pdf_url(self, busca_id, pdf_urls):
         import requests
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
         headers = {
@@ -213,12 +213,100 @@ class SupabaseAgent:
             "Authorization": f"Bearer {st.session_state.jwt_token}",
             "Content-Type": "application/json"
         }
-        data = {"pdf_buscas": pdf_url}
+        # Aceita lista de URLs ou string única
+        if isinstance(pdf_urls, str):
+            data = {"pdf_buscas": [pdf_urls]}
+        else:
+            data = {"pdf_buscas": pdf_urls}
         resp = requests.patch(url, headers=headers, json=data)
         if resp.status_code not in (200, 204):
             st.warning(f"Erro ao atualizar pdf_buscas: {resp.text}")
             return False
         return True
+
+    def get_funcionario_by_id(self, user_id: str):
+        """
+        Busca um funcionário pelo ID no Supabase.
+        Args:
+            user_id (str): ID do funcionário
+        Returns:
+            dict: Dados do funcionário ou None se não encontrado
+        """
+        resp = self.client.table('funcionario').select(
+            '*').eq('id', user_id).execute()
+        return resp.data[0] if resp.data and len(resp.data) > 0 else None
+
+    def get_all_consultores(self):
+        resp = self.client.table('perfil').select('*').execute()
+        return resp.data if resp.data else []
+
+    def get_consultores_nao_admin(self):
+        """
+        Busca todos os consultores que não são admin (is_admin = false)
+        Returns:
+            list: Lista de consultores não-admin
+        """
+        resp = self.client.table('perfil').select(
+            '*').eq('is_admin', False).execute()
+        return resp.data if resp.data else []
+
+    def verificar_usuario_funcionario_perfil(self, user_id: str) -> bool:
+        """
+        Verifica se o usuário existe tanto na tabela perfil quanto na tabela funcionario
+        Args:
+            user_id (str): ID do usuário
+        Returns:
+            bool: True se existe em ambas as tabelas, False caso contrário
+        """
+        perfil = self.get_profile(user_id)
+        funcionario = self.get_funcionario_by_id(user_id)
+        return perfil is not None and funcionario is not None
+
+    def insert_deposito_patente(self, data: dict, jwt_token: str) -> bool:
+        """
+        Insere um novo depósito de patente usando a API REST do Supabase.
+        Args:
+            data (dict): Dados do depósito
+            jwt_token (str): Token JWT do usuário autenticado
+        Returns:
+            bool: True se inserido com sucesso, False caso contrário
+        """
+        try:
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente"
+            headers = self._get_headers(jwt_token, content_type=True)
+            resp = requests.post(url, headers=headers, json=data)
+
+            if resp.status_code not in (201, 200):
+                st.error(f"Erro ao inserir depósito de patente: {resp.text}")
+                return False
+            return True
+        except Exception as e:
+            st.error(f"Erro ao inserir depósito de patente: {str(e)}")
+            return False
+
+    def get_depositos_patente_para_funcionario(self, funcionario_id: str):
+        """
+        Busca todos os depósitos de patente feitos por um funcionário
+        Args:
+            funcionario_id (str): ID do funcionário
+        Returns:
+            list: Lista de depósitos de patente
+        """
+        resp = self.client.table('deposito_patente').select(
+            '*').eq('funcionario_id', funcionario_id).execute()
+        return resp.data if resp.data else []
+
+    def get_depositos_patente_para_consultor(self, consultor_id: str):
+        """
+        Busca todos os depósitos de patente associados a um consultor
+        Args:
+            consultor_id (str): ID do consultor
+        Returns:
+            list: Lista de depósitos de patente
+        """
+        resp = self.client.table('deposito_patente').select(
+            '*').eq('consultor', consultor_id).execute()
+        return resp.data if resp.data else []
 
 
 # Exemplo de uso:
