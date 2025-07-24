@@ -36,15 +36,13 @@ def main():
     opcoes_menu = [
         'Solicitar Busca',
         'Minhas Buscas',
-        'Solicitar Patente',
-        'Depósito Patente',
+        'Solicitar Serviço de Patente',
         'Minhas Patentes'
     ]
     icones_menu = [
         'search',            # Solicitar Busca
         'list-task',         # Minhas Buscas
-        'file-earmark-plus',  # Solicitar Patente
-        'file-earmark-arrow-up',  # Depósito Patente
+        'file-earmark-arrow-up',  # Solicitar Serviço de Patente
         'file-earmark-text'  # Minhas Patentes
     ]
     with st.sidebar:
@@ -100,13 +98,18 @@ def main():
                 st.session_state.enviando_pedido = True
                 ok = busca_manager.enviar_busca(form_data)
                 if ok:
+                    st.session_state["sucesso"] = True
                     limpar_formulario()
+                    st.rerun()
+                else:
+                    st.error("Erro ao enviar pedido. Tente novamente.")
                 st.session_state.enviando_pedido = False
+        if st.session_state.get("sucesso"):
+            st.success("Pedido enviado com sucesso! O formulário foi limpo.")
+            del st.session_state["sucesso"]
     elif escolha == "Minhas Buscas":
         marcas_views.minhas_buscas(busca_manager, is_admin)
-    elif escolha == "Solicitar Patente":
-        patentes_views.solicitar_patente()
-    elif escolha == "Depósito Patente":
+    elif escolha == "Solicitar Serviço de Patente":
         patentes_views.deposito_patente()
     elif escolha == "Minhas Patentes":
         patentes_views.minhas_patentes()

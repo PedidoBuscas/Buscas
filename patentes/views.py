@@ -3,6 +3,7 @@ from supabase_agent import SupabaseAgent
 from datetime import datetime
 import json
 
+
 MODULO_INFO = {
     "nome": "Patentes",
     "emoji": "📄",
@@ -67,6 +68,17 @@ def minhas_patentes():
                     st.markdown(f"**Status:** 🟢 Depositada")
                     st.markdown(f"**Título:** {pat.get('titulo', '')}")
                     st.markdown(f"**Cliente:** {pat.get('cliente', '')}")
+                    if pat.get('cpf_cnpj'):
+                        st.markdown(f"**CPF/CNPJ:** {pat.get('cpf_cnpj', '')}")
+                    if pat.get('nome_contato'):
+                        st.markdown(
+                            f"**Pessoa para contato:** {pat.get('nome_contato', '')}")
+                    if pat.get('fone_contato'):
+                        st.markdown(
+                            f"**Telefone:** {pat.get('fone_contato', '')}")
+                    if pat.get('email_contato'):
+                        st.markdown(
+                            f"**E-mail:** {pat.get('email_contato', '')}")
                     st.markdown(f"**Contrato:** {pat.get('ncontrato', '')}")
                     st.markdown(
                         f"**Vencimento:** {formatar_data_br(pat.get('data_vencimento', ''))}")
@@ -113,6 +125,17 @@ def minhas_patentes():
                     st.markdown(f"**Status:** 🟢 Depositada")
                     st.markdown(f"**Título:** {pat.get('titulo', '')}")
                     st.markdown(f"**Cliente:** {pat.get('cliente', '')}")
+                    if pat.get('cpf_cnpj'):
+                        st.markdown(f"**CPF/CNPJ:** {pat.get('cpf_cnpj', '')}")
+                    if pat.get('nome_contato'):
+                        st.markdown(
+                            f"**Pessoa para contato:** {pat.get('nome_contato', '')}")
+                    if pat.get('fone_contato'):
+                        st.markdown(
+                            f"**Telefone:** {pat.get('fone_contato', '')}")
+                    if pat.get('email_contato'):
+                        st.markdown(
+                            f"**E-mail:** {pat.get('email_contato', '')}")
                     st.markdown(f"**Contrato:** {pat.get('ncontrato', '')}")
                     st.markdown(
                         f"**Vencimento:** {formatar_data_br(pat.get('data_vencimento', ''))}")
@@ -131,6 +154,65 @@ def minhas_patentes():
         else:
             st.info("Não há patentes sob sua responsabilidade.")
 
+    # Se for administrador (funcionário com is_admin = True), mostra todas as patentes
+    if funcionario and funcionario.get('is_admin', False):
+        # Se também é consultor, adiciona divisão
+        if perfil and not perfil.get('is_admin', False):
+            st.markdown("---")
+        st.subheader("Todas as Patentes (Visão Administrativa)")
+        todas_patentes = supabase_agent.get_all_depositos_patente()
+        if todas_patentes:
+            for pat in todas_patentes:
+                # Cabeçalho do expansor: título, cliente e vencimento
+                titulo = pat.get('titulo', 'Sem título')
+                cliente = pat.get('cliente', '')
+                data_vencimento = pat.get('data_vencimento', '')
+                resumo = f"📋 {titulo}"
+                if cliente:
+                    resumo += f" | Cliente: {cliente}"
+                if data_vencimento:
+                    try:
+                        from datetime import datetime
+                        data_br = datetime.fromisoformat(
+                            data_vencimento).strftime('%d/%m/%Y')
+                    except Exception:
+                        data_br = data_vencimento
+                    resumo += f" | Vencimento: {data_br}"
+                with st.expander(resumo):
+                    st.markdown(f"**Status:** 🟢 Depositada")
+                    st.markdown(f"**Título:** {pat.get('titulo', '')}")
+                    st.markdown(f"**Cliente:** {pat.get('cliente', '')}")
+                    if pat.get('cpf_cnpj'):
+                        st.markdown(f"**CPF/CNPJ:** {pat.get('cpf_cnpj', '')}")
+                    if pat.get('nome_contato'):
+                        st.markdown(
+                            f"**Pessoa para contato:** {pat.get('nome_contato', '')}")
+                    if pat.get('fone_contato'):
+                        st.markdown(
+                            f"**Telefone:** {pat.get('fone_contato', '')}")
+                    if pat.get('email_contato'):
+                        st.markdown(
+                            f"**E-mail:** {pat.get('email_contato', '')}")
+                    st.markdown(f"**Contrato:** {pat.get('ncontrato', '')}")
+                    st.markdown(
+                        f"**Vencimento:** {formatar_data_br(pat.get('data_vencimento', ''))}")
+                    st.markdown(f"**Natureza:** {pat.get('natureza', '')}")
+                    st.markdown(
+                        f"**Funcionário:** {pat.get('name_funcionario', '')}")
+                    st.markdown(
+                        f"**Consultor:** {pat.get('name_consultor', '')}")
+                    if pat.get('observacoes'):
+                        st.markdown(
+                            f"**Observações:** {pat.get('observacoes', '')}")
+                    # Exibir links dos PDFs
+                    pdfs = pat.get('pdf_patente')
+                    if pdfs:
+                        st.markdown("**PDF(s) da patente:**")
+                        for i, url in enumerate(pdfs):
+                            st.markdown(f"[PDF {i+1}]({url})")
+        else:
+            st.info("Não há patentes cadastradas no sistema.")
+
     # Se não for nem funcionário nem consultor
     if not funcionario and not perfil:
         st.error(
@@ -138,7 +220,7 @@ def minhas_patentes():
 
 
 def deposito_patente():
-    st.header("Depósito de Patente")
+    st.header("Solicitar Serviço de Patente")
     supabase_agent = SupabaseAgent()
 
     # Verifica se há usuário na sessão e JWT token
@@ -172,18 +254,52 @@ def deposito_patente():
     consultor = next(
         (c for c in consultores if c['name'] == consultor_escolhido), None) if consultor_nomes else None
 
+    # Nonce para forçar limpeza dos campos
+    nonce = st.session_state.get("patente_form_nonce", 0)
+
     with st.form("form_deposito_patente"):
-        ncontrato = st.text_input("Número do contrato")
-        data_vencimento = st.date_input("Vencimento da primeira parcela")
-        cliente = st.text_input("Nome do cliente")
-        titulo = st.text_input("Título da patente")
-        servico = st.text_input("Serviço do contrato")
+        ncontrato = st.text_input(
+            "Número do contrato", key=f"ncontrato_{nonce}")
+        data_vencimento = st.date_input(
+            "Vencimento da primeira parcela", key=f"data_vencimento_{nonce}")
+        cliente = st.text_input("Nome do cliente", key=f"cliente_{nonce}")
+
+        # Novos campos de contato
+        col1, col2 = st.columns(2)
+        with col1:
+            cpf_cnpj = st.text_input("CPF/CNPJ", key=f"cpf_cnpj_{nonce}")
+        with col2:
+            nome_contato = st.text_input(
+                "Pessoa para contato", key=f"nome_contato_{nonce}")
+
+        col3, col4 = st.columns(2)
+        with col3:
+            fone_contato = st.text_input(
+                "Telefone para contato", key=f"fone_contato_{nonce}")
+        with col4:
+            email_contato = st.text_input(
+                "E-mail para contato", key=f"email_contato_{nonce}")
+
+        titulo = st.text_input("Título da patente", key=f"titulo_{nonce}")
+        servico = st.selectbox("Serviço do contrato", [
+            "Manifestação à Nulidade",
+            "Alterações nos relatórios",
+            "Apresentação de Subsídios ao Exame Técnico",
+            "Busca de Patente",
+            "Cumprimento de Exigência",
+            "Depósito de Desenho Industrial",
+            "Depósito de PI, MU, PCT, e etc…",
+            "Recurso ao Indeferimento",
+            "Manifestação Sobre Invenção",
+            "Apresentação de Nulidade Administrativa em DI, PI e MU"
+        ], key=f"servico_{nonce}")
         natureza = st.selectbox("Natureza da patente", [
-                                "Invenção", "Modelo de Utilidade", "Desenho Industrial"])
-        observacoes = st.text_area("Observações (opcional)")
+                                "Invenção", "Modelo de Utilidade", "Desenho Industrial"], key=f"natureza_{nonce}")
+        observacoes = st.text_area(
+            "Observações (opcional)", key=f"observacoes_{nonce}")
         uploaded_files = st.file_uploader(
-            "PDFs da patente", type=["pdf"], accept_multiple_files=True)
-        submitted = st.form_submit_button("Salvar Depósito de Patente")
+            "PDFs da patente", type=["pdf"], accept_multiple_files=True, key=f"uploaded_files_{nonce}")
+        submitted = st.form_submit_button("Solicitar Serviço de Patente")
 
     if submitted:
         if not consultor:
@@ -202,21 +318,34 @@ def deposito_patente():
             "name_funcionario": funcionario['name'],
             "consultor": consultor['id'],
             "name_consultor": consultor['name'],
-            "ncontrato": ncontrato,
+            "ncontrato": ncontrato or "",
             "data_vencimento": data_vencimento.isoformat(),
-            "cliente": cliente,
-            "titulo": titulo,
-            "servico": servico,
-            "natureza": natureza,
-            "observacoes": observacoes,
-            "pdf_patente": pdf_urls if pdf_urls else None,
+            "cliente": cliente or "",
+            "cpf_cnpj": cpf_cnpj or "",
+            "nome_contato": nome_contato or "",
+            "fone_contato": fone_contato or "",
+            "email_contato": email_contato or "",
+            "titulo": titulo or "",
+            "servico": servico or "",
+            "natureza": natureza or "",
+            "observacoes": observacoes or "",
+            "pdf_patente": pdf_urls if pdf_urls else [],
         }
         ok = supabase_agent.insert_deposito_patente(
             data, st.session_state.jwt_token)
         if ok:
-            st.success("Depósito de patente cadastrado com sucesso!")
+            st.session_state["patente_sucesso"] = True
+            # Incrementar nonce para forçar limpeza dos campos
+            st.session_state["patente_form_nonce"] = st.session_state.get(
+                "patente_form_nonce", 0) + 1
+            st.rerun()
         else:
-            st.error("Erro ao salvar depósito de patente.")
+            st.error("Erro ao solicitar serviço de patente.")
+
+    if st.session_state.get("patente_sucesso"):
+        st.success(
+            "Serviço de patente solicitado com sucesso! O formulário foi limpo.")
+        del st.session_state["patente_sucesso"]
 
 
 def formatar_data_br(data_iso):

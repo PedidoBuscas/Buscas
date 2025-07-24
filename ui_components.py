@@ -467,30 +467,39 @@ def render_sidebar(modulos=None):
 
 def limpar_formulario():
     """Limpa todos os campos do formulário"""
-    campos_para_limpar = [
-        "highlight_classe", "highlight_marca", "envio_sucesso", "data",
-        "tipo_busca", "consultor_select", "consultor_input", "consultor",
-        "observacao", "last_form_data"
+    # Resetar marcas para estado inicial (1 marca com 1 classe vazia)
+    st.session_state["marcas"] = [
+        {"marca": "", "classes": [{"classe": "", "especificacao": ""}]}
     ]
+
+    # Limpar campos específicos do formulário
+    campos_para_limpar = [
+        "resultados_busca", "termo_buscado", "enviando_pedido"
+    ]
+
     for k in campos_para_limpar:
         if k in st.session_state:
             del st.session_state[k]
 
-    # Remove campos dinâmicos primeiro
+    # Remove campos dinâmicos com nonce
     chaves_dinamicas = [
         k for k in list(st.session_state.keys())
         if isinstance(k, str) and (
-            k.startswith("classe_") or k.startswith(
-                "especificacao_") or k.startswith("marca_")
+            k.startswith("classe_") or k.startswith("especificacao_") or
+            k.startswith("marca_") or k.startswith("check_") or
+            k.startswith("usar_varias_") or k.startswith("btn_buscar_classificador") or
+            k.startswith("limpar_resultados") or k.startswith("enviar_final") or
+            k.startswith("remover_classe_") or k.startswith("add_classe_") or
+            k.startswith("data_") or k.startswith("tipo_busca_") or
+            k.startswith("observacao_") or k.startswith(
+                "termo_busca_classificador_")
         )
     ]
     for k in chaves_dinamicas:
         del st.session_state[k]
 
-    # Resetar marcas para estado inicial (1 marca com 1 classe vazia)
-    st.session_state["marcas"] = [
-        {"marca": "", "classes": [{"classe": "", "especificacao": ""}]}
-    ]
+    # Incrementar form_nonce para forçar limpeza dos campos dinâmicos
+    st.session_state["form_nonce"] = st.session_state.get("form_nonce", 0) + 1
 
 
 def exibir_especificacoes_card(busca):

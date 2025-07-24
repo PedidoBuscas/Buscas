@@ -264,7 +264,7 @@ class SupabaseAgent:
 
     def insert_deposito_patente(self, data: dict, jwt_token: str) -> bool:
         """
-        Insere um novo depósito de patente usando a API REST do Supabase.
+        Insere um novo depósito de patente usando o SDK do Supabase.
         Args:
             data (dict): Dados do depósito
             jwt_token (str): Token JWT do usuário autenticado
@@ -272,16 +272,29 @@ class SupabaseAgent:
             bool: True se inserido com sucesso, False caso contrário
         """
         try:
-            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente"
-            headers = self._get_headers(jwt_token, content_type=True)
-            resp = requests.post(url, headers=headers, json=data)
+            # Remove campos que podem estar causando problemas
+            data_clean = data.copy()
 
-            if resp.status_code not in (201, 200):
-                st.error(f"Erro ao inserir depósito de patente: {resp.text}")
+            # Garante que não há campos None ou vazios que possam causar problemas
+            for key, value in data_clean.items():
+                if value is None:
+                    data_clean[key] = ""
+                elif isinstance(value, str) and value.strip() == "":
+                    data_clean[key] = ""
+
+            resp = self.client.table(
+                'deposito_patente').insert(data_clean).execute()
+
+            if not resp.data:
+                st.error(
+                    "Erro ao inserir depósito de patente: resposta vazia do Supabase.")
+                logging.error(
+                    "Erro ao inserir depósito de patente: resposta vazia do Supabase.")
                 return False
             return True
         except Exception as e:
             st.error(f"Erro ao inserir depósito de patente: {str(e)}")
+            logging.error(f"Erro ao inserir depósito de patente: {str(e)}")
             return False
 
     def get_depositos_patente_para_funcionario(self, funcionario_id: str):
@@ -306,6 +319,15 @@ class SupabaseAgent:
         """
         resp = self.client.table('deposito_patente').select(
             '*').eq('consultor', consultor_id).execute()
+        return resp.data if resp.data else []
+
+    def get_all_depositos_patente(self):
+        """
+        Busca todos os depósitos de patente (para administradores)
+        Returns:
+            list: Lista de todos os depósitos de patente
+        """
+        resp = self.client.table('deposito_patente').select('*').execute()
         return resp.data if resp.data else []
 
 

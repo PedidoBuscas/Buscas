@@ -75,11 +75,11 @@ class FormAgent:
         col1, col2, col3 = st.columns([1.2, 1, 1])
         with col1:
             data = st.date_input("Data", value=st.session_state.get(
-                "data", date.today()), key="data")
+                "data", date.today()), key=f"data_{nonce}")
             data_br = data.strftime("%d/%m/%Y")
         with col2:
             tipo_busca = st.selectbox("Busca paga ou cortesia", [
-                                      "Paga", "Cortesia"], key="tipo_busca")
+                                      "Paga", "Cortesia"], key=f"tipo_busca_{nonce}")
         with col3:
             consultor_nome = st.session_state.get("consultor_nome", "")
             consultor_email = st.session_state.get("consultor_email", "")
@@ -114,14 +114,14 @@ class FormAgent:
         with col_busca1:
             termo_busca = st.text_input(
                 "Digite um produto ou serviço para buscar no Classificador INPI:",
-                key="termo_busca_classificador",
+                key=f"termo_busca_classificador_{nonce}",
                 placeholder="Ex: software, roupas, alimentos...",
                 label_visibility="visible"
             )
         with col_busca2:
             st.markdown("<div style='height:1.7em'></div>",
                         unsafe_allow_html=True)  # Alinha o botão verticalmente
-            if st.button("🔍 Buscar", key="btn_buscar_classificador"):
+            if st.button("🔍 Buscar", key=f"btn_buscar_classificador_{nonce}"):
                 if termo_busca.strip():
                     resultados = buscar_no_classificador(
                         termo_busca.strip(),
@@ -144,10 +144,10 @@ class FormAgent:
                         selecionadas = []
                         for idx, espec in enumerate(especificacoes):
                             checked = st.checkbox(
-                                espec, key=f"check_{classe}_{idx}")
+                                espec, key=f"check_{classe}_{idx}_{nonce}")
                             if checked:
                                 selecionadas.append((idx, espec))
-                        if selecionadas and st.button(f"Usar essas especificações da classe {classe}", key=f"usar_varias_{classe}"):
+                        if selecionadas and st.button(f"Usar essas especificações da classe {classe}", key=f"usar_varias_{classe}_{nonce}"):
                             marca = st.session_state.marcas[0]
                             especificacoes_texto = []
                             for _, espec in selecionadas:
@@ -202,7 +202,7 @@ class FormAgent:
 
         # Botão para limpar resultados
         if "resultados_busca" in st.session_state and st.session_state.resultados_busca:
-            if st.button("Limpar resultados", key="limpar_resultados"):
+            if st.button("Limpar resultados", key=f"limpar_resultados_{nonce}"):
                 del st.session_state.resultados_busca
                 del st.session_state.termo_buscado
                 st.rerun()
@@ -243,11 +243,11 @@ class FormAgent:
                         especs_str = '; '.join(especs)
                         st.markdown(
                             f"<div style='color:#444;font-size:12px;margin-bottom:8px;'><b>Visualização:</b> {especs_str}</div>", unsafe_allow_html=True)
-                    if st.button("➖", key=f"remover_classe_{i}_{j}", help="Remover esta classe", disabled=st.session_state.get('enviando_pedido', False)):
+                    if st.button("➖", key=f"remover_classe_{i}_{j}_{nonce}", help="Remover esta classe", disabled=st.session_state.get('enviando_pedido', False)):
                         remover_classe_idx = (i, j)
                 # Botão de adicionar classe (máximo 5 classes por marca)
                 if len(marca_dict["classes"]) < 5:
-                    if st.button("➕ Adicionar Classe", key=f"add_classe_{i}", help="Adicionar nova classe para esta marca", disabled=st.session_state.get('enviando_pedido', False)):
+                    if st.button("➕ Adicionar Classe", key=f"add_classe_{i}_{nonce}", help="Adicionar nova classe para esta marca", disabled=st.session_state.get('enviando_pedido', False)):
                         add_classe_idx = i
         # Remover o botão de adicionar nova marca
         # if st.button("➕ Adicionar Nova Marca", key="add_marca", help="Adicionar mais uma marca"):
@@ -285,10 +285,10 @@ class FormAgent:
 
         # Campo Observação (sempre no final, independente do número de classes)
         observacao = st.text_area("Observação", value=st.session_state.get(
-            "observacao", ""), key="observacao")
+            "observacao", ""), key=f"observacao_{nonce}")
 
         # --- Botão de envio final ---
-        if st.button("Enviar Pedido de Busca", key="enviar_final", disabled=st.session_state.get('enviando_pedido', False)):
+        if st.button("Enviar Pedido de Busca", key=f"enviar_final_{nonce}", disabled=st.session_state.get('enviando_pedido', False)):
             st.session_state.enviando_pedido = True
             consultor_val = st.session_state.get("consultor", "").strip()
             if not consultor_val:
@@ -297,7 +297,9 @@ class FormAgent:
                 return None
             for i, marca in enumerate(st.session_state.marcas):
                 # Validar se o nome da marca está preenchido
-                if not marca["marca"].strip():
+                marca_val = st.session_state.get(
+                    f"marca_{i}_{nonce}", "").strip()
+                if not marca_val:
                     st.error(
                         "Por favor, preencha o nome da marca antes de enviar.")
                     return None
@@ -319,6 +321,7 @@ class FormAgent:
                         return None
             # Sincroniza os valores do session_state para o dicionário marcas
             for i, marca in enumerate(st.session_state.marcas):
+                marca["marca"] = st.session_state.get(f"marca_{i}_{nonce}", "")
                 for j, classe in enumerate(marca["classes"]):
                     classe["classe"] = st.session_state.get(
                         f"classe_{i}_{j}_{nonce}", "")
@@ -326,11 +329,11 @@ class FormAgent:
                         f"especificacao_{i}_{j}_{nonce}", "")
             st.session_state.envio_sucesso = True
             form_data = {
-                "data": st.session_state.get("data", date.today()).strftime("%d/%m/%Y"),
-                "tipo_busca": st.session_state.get("tipo_busca", ""),
+                "data": st.session_state.get(f"data_{nonce}", date.today()).strftime("%d/%m/%Y"),
+                "tipo_busca": st.session_state.get(f"tipo_busca_{nonce}", ""),
                 "consultor": consultor_val,
                 "marcas": st.session_state.marcas,
-                "observacao": st.session_state.get("observacao", "")
+                "observacao": st.session_state.get(f"observacao_{nonce}", "")
             }
             return form_data
         return None
