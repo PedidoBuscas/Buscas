@@ -110,9 +110,9 @@ def main():
     elif escolha == "Minhas Buscas":
         marcas_views.minhas_buscas(busca_manager, is_admin)
     elif escolha == "Solicitar Serviço de Patente":
-        patentes_views.deposito_patente()
+        patentes_views.deposito_patente(email_agent)
     elif escolha == "Minhas Patentes":
-        patentes_views.minhas_patentes()
+        patentes_views.minhas_patentes(email_agent)
 
 
 if __name__ == "__main__":

@@ -20,13 +20,7 @@ O sistema utiliza a coluna `analise_realizada` existente no banco de dados para 
 
 ## Usuários com Acesso Administrativo
 
-Os seguintes usuários podem ver todas as buscas e gerenciar status:
-
-- `admin@agpmarcas.com`
-- `analista1@agpmarcas.com`
-- `analista2@agpmarcas.com`
-- `coordenador@agpmarcas.com`
-
+Os usuários com permissões de administrador podem ver todas as buscas e gerenciar status. Essas permissões são configuradas na tabela `perfil` com o campo `is_admin = true`.
 ## Fluxo de Trabalho
 
 ### Para Consultores:

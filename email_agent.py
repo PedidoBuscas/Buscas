@@ -57,9 +57,10 @@ class EmailAgent:
         msg["From"] = self.smtp_user
         msg["To"] = destinatario
         msg.set_content(corpo, subtype='html')
-        # Anexar PDF
-        msg.add_attachment(anexo_bytes, maintype="application",
-                           subtype="pdf", filename=nome_arquivo)
+        # Anexar PDF apenas se fornecido
+        if anexo_bytes is not None and nome_arquivo is not None:
+            msg.add_attachment(anexo_bytes, maintype="application",
+                               subtype="pdf", filename=nome_arquivo)
         try:
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()

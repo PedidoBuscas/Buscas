@@ -5,7 +5,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from pdf_generator import gerar_pdf_busca
 from ui_components import exibir_especificacoes_card
-from config import USUARIOS_ADMIN
+
 import unicodedata
 
 
@@ -300,7 +300,7 @@ class BuscaManager:
                         file_name = normalize_filename(
                             f"{busca['id']}_{file.name}")
                         url = self.supabase_agent.upload_pdf_to_storage(
-                            file, file_name, st.session_state.jwt_token)
+                            file, file_name, st.session_state.jwt_token, bucket="buscaspdf")
                         pdf_urls.append(url)
                     # Atualiza pdf_buscas como lista de URLs
                     self.supabase_agent.update_busca_pdf_url(
@@ -418,14 +418,8 @@ class BuscaManager:
         """Renderiza os botões de ação para uma busca"""
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
-        # Exibir botão de apagar apenas para o admin@agpmarcas.com
-        from config import USUARIOS_ADMIN
-        user_email = None
-        if hasattr(st.session_state.user, 'email'):
-            user_email = st.session_state.user.email
-        elif isinstance(st.session_state.user, dict):
-            user_email = st.session_state.user.get('email')
-        if user_email == 'admin@agpmarcas.com':
+        # Exibir botão de apagar apenas para administradores
+        if is_admin:
             with col1:
                 if st.button("��️ Apagar", key=f"apagar_{busca['id']}"):
                     if self.deletar_busca(busca['id']):
