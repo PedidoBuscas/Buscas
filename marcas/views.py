@@ -47,10 +47,13 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
             return user.get('id')
         return getattr(user, 'id', None)
     user_id = get_user_id(st.session_state.user)
-    buscas = busca_manager.buscar_buscas_usuario(
-        user_id,
-        is_admin=is_admin
-    )
+
+    # Se é admin, buscar todas as buscas
+    if is_admin:
+        buscas = busca_manager.buscar_buscas_usuario(is_admin=True)
+    else:
+        # Para não-admin, buscar apenas buscas do consultor
+        buscas = busca_manager.buscar_buscas_usuario(user_id, is_admin=False)
 
     # Filtro unificado
     if busca_geral:
@@ -63,16 +66,22 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
     # Ordenar por prioridade
     buscas = busca_manager.ordenar_buscas_prioridade(buscas)
 
-    # Buscar todas as buscas para a fila global (para contagem)
-    todas_buscas_fila = busca_manager.buscar_buscas_usuario(is_admin=True)
-    if busca_geral:
-        termo = busca_geral.lower()
-        todas_buscas_fila = [
-            b for b in todas_buscas_fila
-            if termo in b.get('marca', '').lower() or termo in b.get('nome_consultor', '').lower()
-        ]
-    todas_buscas_fila = busca_manager.ordenar_buscas_prioridade(
-        todas_buscas_fila)
+    # Buscar todas as buscas para a fila global (apenas se necessário)
+    todas_buscas_fila = None
+    if not is_admin:
+        # Para não-admin, buscar todas as buscas apenas para calcular posição na fila
+        todas_buscas_fila = busca_manager.buscar_buscas_usuario(is_admin=True)
+        if busca_geral:
+            termo = busca_geral.lower()
+            todas_buscas_fila = [
+                b for b in todas_buscas_fila
+                if termo in b.get('marca', '').lower() or termo in b.get('nome_consultor', '').lower()
+            ]
+        todas_buscas_fila = busca_manager.ordenar_buscas_prioridade(
+            todas_buscas_fila)
+    else:
+        # Para admin, usar as mesmas buscas já filtradas
+        todas_buscas_fila = buscas
 
     # Organizar buscas por status
     buscas_por_status = busca_manager.separar_buscas_por_status(buscas)

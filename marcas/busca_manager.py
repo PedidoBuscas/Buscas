@@ -160,28 +160,6 @@ class BuscaManager:
 
         return buscas
 
-    def deletar_busca(self, busca_id: str) -> bool:
-        """
-        Deleta uma busca.
-
-        Args:
-            busca_id: ID da busca
-
-        Returns:
-            bool: True se deletado com sucesso
-        """
-        if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
-            st.error("Você precisa estar logado para acessar esta funcionalidade.")
-            st.stop()
-        ok = self.supabase_agent.delete_busca_rest(
-            busca_id, st.session_state.jwt_token)
-        if ok:
-            st.success("Busca apagada com sucesso!")
-            return True
-        else:
-            st.error("Erro ao apagar busca!")
-            return False
-
     def atualizar_status_busca(self, busca_id: str, novo_status: str) -> bool:
         """
         Atualiza o status de uma busca persistindo em status_busca no banco.
@@ -417,13 +395,6 @@ class BuscaManager:
     def _renderizar_botoes_acao(self, busca: Dict[str, Any], is_admin: bool):
         """Renderiza os botões de ação para uma busca"""
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
-
-        # Exibir botão de apagar apenas para administradores
-        if is_admin:
-            with col1:
-                if st.button("��️ Apagar", key=f"apagar_{busca['id']}"):
-                    if self.deletar_busca(busca['id']):
-                        st.rerun()
 
         if is_admin:
             status_atual = self.get_status_atual(busca)

@@ -464,34 +464,34 @@ def renderizar_patente(patente, patente_manager, is_admin):
                     with col4:
                         # Espaço reservado para futuras ações
                         pass
-            else:
-                # Para outros status, mostrar botões normais
-                col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        else:
+            # Para outros status, mostrar botões normais
+            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
-                with col1:
-                    if status == patente_manager.STATUS_PENDENTE:
-                        if st.button("📥 Recebido", key=f"recebido_{patente['id']}"):
-                            if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RECEBIDO):
-                                st.rerun()
-                    elif status == patente_manager.STATUS_RECEBIDO:
-                        if st.button("📝 Fazendo Relatório", key=f"fazendo_{patente['id']}"):
-                            if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_FAZENDO_RELATORIO):
-                                st.rerun()
+            with col1:
+                if status == patente_manager.STATUS_PENDENTE:
+                    if st.button("📥 Recebido", key=f"recebido_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RECEBIDO):
+                            st.rerun()
+                elif status == patente_manager.STATUS_RECEBIDO:
+                    if st.button("📝 Fazendo Relatório", key=f"fazendo_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_FAZENDO_RELATORIO):
+                            st.rerun()
 
-                with col2:
-                    # Espaço reservado para futuras ações
-                    pass
+            with col2:
+                # Espaço reservado para futuras ações
+                pass
 
-                with col3:
-                    # Espaço reservado para futuras ações
-                    pass
+            with col3:
+                # Espaço reservado para futuras ações
+                pass
 
-                with col4:
-                    # Espaço reservado para futuras ações
-                    pass
+            with col4:
+                # Espaço reservado para futuras ações
+                pass
 
-            st.markdown(
-                f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {status_icon} {status_text}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {status_icon} {status_text}</div>", unsafe_allow_html=True)
 
 
 def deposito_patente(email_agent):

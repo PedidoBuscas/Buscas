@@ -166,21 +166,6 @@ class SupabaseAgent:
             logging.error(f"Erro ao buscar buscas: {resp.text}")
             return []
 
-    def delete_busca_rest(self, busca_id: str, jwt_token: str) -> bool:
-        """
-        Deleta uma busca pelo ID via REST API do Supabase.
-        """
-        import requests
-        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas?id=eq.{busca_id}"
-        headers = self._get_headers(jwt_token)
-        resp = requests.delete(url, headers=headers)
-        if resp.status_code in (200, 204):
-            return True
-        else:
-            st.warning(f"Erro ao deletar busca: {resp.text}")
-            logging.error(f"Erro ao deletar busca: {resp.text}")
-            return False
-
     def get_all_buscas_rest(self, jwt_token: str) -> list:
         """
         Busca todas as buscas cadastradas via REST API do Supabase.
