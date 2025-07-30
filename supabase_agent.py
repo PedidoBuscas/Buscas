@@ -226,23 +226,98 @@ class SupabaseAgent:
         """
         Faz upload de um arquivo PDF para o Supabase Storage via REST API autenticada com o JWT do usuário logado e retorna a URL pública.
         """
-        # Sanitiza o nome do arquivo
-        sanitized_filename = self._sanitize_filename(file_name)
+        try:
+            # Log para debug
+            logging.info(f"Iniciando upload para bucket: {bucket}")
+            logging.info(f"JWT token presente: {bool(jwt_token)}")
 
-        url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/{bucket}/{sanitized_filename}"
-        headers = {
-            "Authorization": f"Bearer {jwt_token}",
-            "apikey": os.getenv("SUPABASE_KEY"),
-            "Content-Type": "application/pdf"
-        }
-        resp = requests.post(url, headers=headers, data=file.getvalue())
-        if resp.status_code not in (200, 201):
-            st.warning(f"Erro ao fazer upload do PDF: {resp.text}")
-            logging.error(f"Erro ao fazer upload do PDF: {resp.text}")
-            raise Exception(f"Erro ao fazer upload: {resp.text}")
-        # Montar a URL pública conforme padrão do seu bucket
-        public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{sanitized_filename}"
-        return public_url
+            # Sanitiza o nome do arquivo
+            sanitized_filename = self._sanitize_filename(file_name)
+
+            # Verificar se o arquivo existe e tem conteúdo
+            if not file or not hasattr(file, 'getvalue'):
+                raise Exception("Arquivo inválido ou vazio")
+
+            file_content = file.getvalue()
+            if not file_content:
+                raise Exception("Arquivo está vazio")
+
+            url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/{bucket}/{sanitized_filename}"
+            headers = {
+                "Authorization": f"Bearer {jwt_token}",
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Content-Type": "application/pdf"
+            }
+
+            # Log para debug dos headers
+            logging.info(f"Headers para upload: {headers}")
+            logging.info(f"JWT token no header: {bool(jwt_token)}")
+
+            # Log para debug
+            logging.info(f"Fazendo upload para: {url}")
+            logging.info(f"Tamanho do arquivo: {len(file_content)} bytes")
+            logging.info(f"Nome do arquivo: {sanitized_filename}")
+
+            resp = requests.post(url, headers=headers,
+                                 data=file_content, timeout=30)
+
+            # Log da resposta
+            logging.info(f"Status code: {resp.status_code}")
+            logging.info(f"Response: {resp.text}")
+
+            if resp.status_code not in (200, 201):
+                error_msg = f"Erro ao fazer upload do PDF: {resp.text}"
+                st.warning(error_msg)
+                logging.error(error_msg)
+                raise Exception(error_msg)
+
+            # Montar a URL pública conforme padrão do seu bucket
+            public_url = f"{os.getenv('SUPABASE_URL')}/storage/v1/object/public/{bucket}/{sanitized_filename}"
+            logging.info(f"Upload bem-sucedido. URL: {public_url}")
+            return public_url
+
+        except requests.exceptions.Timeout:
+            error_msg = "Timeout ao fazer upload do PDF"
+            st.warning(error_msg)
+            logging.error(error_msg)
+            raise Exception(error_msg)
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Erro de conexão ao fazer upload: {str(e)}"
+            st.warning(error_msg)
+            logging.error(error_msg)
+            raise Exception(error_msg)
+        except Exception as e:
+            error_msg = f"Erro inesperado ao fazer upload: {str(e)}"
+            st.warning(error_msg)
+            logging.error(error_msg)
+            raise Exception(error_msg)
+
+    def verificar_bucket_storage(self, bucket_name: str, jwt_token: str) -> bool:
+        """
+        Verifica se o bucket existe e está acessível.
+        """
+        try:
+            import requests
+
+            url = f"{os.getenv('SUPABASE_URL')}/storage/v1/bucket/{bucket_name}"
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            resp = requests.get(url, headers=headers)
+            if resp.status_code == 200:
+                logging.info(f"Bucket {bucket_name} está acessível")
+                return True
+            else:
+                logging.warning(
+                    f"Bucket {bucket_name} não está acessível: {resp.text}")
+                return False
+
+        except Exception as e:
+            logging.error(f"Erro ao verificar bucket {bucket_name}: {str(e)}")
+            return False
 
     def update_busca_pdf_url(self, busca_id, pdf_urls):
         import requests
@@ -316,6 +391,123 @@ class SupabaseAgent:
             st.error(f"Erro ao buscar funcionário: {str(e)}")
             return None
 
+    def get_consultor_by_id(self, user_id: str):
+        """
+        Busca um consultor pelo ID na tabela perfil usando REST API com JWT token.
+        Args:
+            user_id (str): ID do consultor
+        Returns:
+            dict: Dados do consultor ou None se não encontrado
+        """
+        try:
+            import requests
+
+            # Usar REST API com JWT token da sessão ou None
+            jwt_token = getattr(st.session_state, 'jwt_token', None)
+
+            # Se não há JWT token, usar apenas apikey (para casos de inicialização)
+            if jwt_token:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Content-Type": "application/json"
+                }
+            else:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Content-Type": "application/json"
+                }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/perfil?id=eq.{user_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                return data[0] if data and len(data) > 0 else None
+            else:
+                st.warning(f"Erro ao buscar consultor: {resp.text}")
+                return None
+
+        except Exception as e:
+            st.error(f"Erro ao buscar consultor: {str(e)}")
+            return None
+
+    def get_juridico_by_id(self, user_id: str):
+        """
+        Busca um usuário da tabela juridico_marca pelo ID.
+        Args:
+            user_id (str): ID do usuário
+        Returns:
+            dict: Dados do usuário ou None se não encontrado
+        """
+        try:
+            import requests
+
+            jwt_token = getattr(st.session_state, 'jwt_token', None)
+
+            if jwt_token:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Content-Type": "application/json"
+                }
+            else:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Content-Type": "application/json"
+                }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/juridico_marca?id=eq.{user_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                return data[0] if data and len(data) > 0 else None
+            else:
+                st.warning(f"Erro ao buscar usuário jurídico: {resp.text}")
+                return None
+
+        except Exception as e:
+            st.error(f"Erro ao buscar usuário jurídico: {str(e)}")
+            return None
+
+    def get_juridicos_admin(self):
+        """
+        Busca todos os usuários da tabela juridico_marca que são admin (is_admin = true).
+        Returns:
+            list: Lista de usuários jurídicos admin
+        """
+        try:
+            import requests
+
+            jwt_token = getattr(st.session_state, 'jwt_token', None)
+
+            if jwt_token:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Content-Type": "application/json"
+                }
+            else:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Content-Type": "application/json"
+                }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/juridico_marca?is_admin=eq.true"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                return resp.json() if resp.json() else []
+            else:
+                st.warning(
+                    f"Erro ao buscar usuários jurídicos admin: {resp.text}")
+                return []
+
+        except Exception as e:
+            st.error(f"Erro ao buscar usuários jurídicos admin: {str(e)}")
+            return []
+
     def get_all_consultores(self):
         resp = self.client.table('perfil').select('*').execute()
         return resp.data if resp.data else []
@@ -365,6 +557,7 @@ class SupabaseAgent:
         Returns:
             list: Lista de consultores ativos
         """
+
         # Se você tiver um campo 'ativo' na tabela perfil, use:
         # resp = self.client.table('perfil').select('*').eq('is_admin', False).eq('ativo', True).execute()
 
@@ -383,48 +576,481 @@ class SupabaseAgent:
         funcionario = self.get_funcionario_by_id(user_id)
         return perfil is not None and funcionario is not None
 
-    def insert_deposito_patente(self, data: dict, jwt_token: str) -> bool:
+    # ==================== MÉTODOS PARA OBJEÇÕES ====================
+
+    def get_consultor_name_by_id(self, consultor_id: str, jwt_token: str) -> str:
         """
-        Insere um novo depósito de patente usando REST API do Supabase com JWT token.
-        Args:
-            data (dict): Dados do depósito
-            jwt_token (str): Token JWT do usuário autenticado
-        Returns:
-            bool: True se inserido com sucesso, False caso contrário
+        Busca o nome do consultor pelo ID
         """
         try:
             import requests
 
-            # Remove campos que podem estar causando problemas
-            data_clean = data.copy()
-
-            # Garante que não há campos None ou vazios que possam causar problemas
-            for key, value in data_clean.items():
-                if value is None:
-                    data_clean[key] = ""
-                elif isinstance(value, str) and value.strip() == "":
-                    data_clean[key] = ""
-
-            # Definir status inicial como pendente
-            data_clean["status_patente"] = "pendente"
-
-            # Usar REST API com JWT token
-            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente"
             headers = {
                 "apikey": os.getenv("SUPABASE_KEY"),
                 "Authorization": f"Bearer {jwt_token}",
                 "Content-Type": "application/json"
             }
 
-            resp = requests.post(url, headers=headers, json=data_clean)
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/perfil?id=eq.{consultor_id}"
+            resp = requests.get(url, headers=headers)
 
-            if resp.status_code not in (200, 201):
-                st.error(f"Erro ao inserir depósito de patente: {resp.text}")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0].get('name', 'N/A')
+            return 'N/A'
+        except Exception as e:
+            st.error(f"Erro ao buscar nome do consultor: {str(e)}")
+            return 'N/A'
+
+    def get_juridico_name_by_id(self, juridico_id: str, jwt_token: str) -> str:
+        """
+        Busca o nome do usuário jurídico pelo ID
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/juridico_marca?id=eq.{juridico_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0].get('name', 'N/A')
+            return 'N/A'
+        except Exception as e:
+            st.error(f"Erro ao buscar nome do usuário jurídico: {str(e)}")
+            return 'N/A'
+
+    def get_consultor_email_by_id(self, consultor_id: str, jwt_token: str) -> str:
+        """
+        Busca o email do consultor pelo ID
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/perfil?id=eq.{consultor_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0].get('email', 'N/A')
+            return 'N/A'
+        except Exception as e:
+            st.error(f"Erro ao buscar email do consultor: {str(e)}")
+            return 'N/A'
+
+    def get_juridico_email_by_id(self, juridico_id: str, jwt_token: str) -> str:
+        """
+        Busca o email do usuário jurídico pelo ID
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/juridico_marca?id=eq.{juridico_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0].get('email', 'N/A')
+            return 'N/A'
+        except Exception as e:
+            st.error(f"Erro ao buscar email do usuário jurídico: {str(e)}")
+            return 'N/A'
+
+    def insert_objecao(self, objecao_data: dict, jwt_token: str) -> dict:
+        """
+        Insere uma nova objeção na tabela 'objecao' via REST API do Supabase.
+        Retorna o objeto criado ou None se falhar.
+        """
+        try:
+            import requests
+
+            # Buscar nomes e emails antes da inserção
+            consultor_id = objecao_data.get('consultor_objecao')
+            juridico_id = objecao_data.get('juridico_id')
+
+            if consultor_id:
+                name_consultor = self.get_consultor_name_by_id(
+                    consultor_id, jwt_token)
+                email_consultor = self.get_consultor_email_by_id(
+                    consultor_id, jwt_token)
+                objecao_data['name_consultor'] = name_consultor
+                objecao_data['email_consultor'] = email_consultor
+
+            if juridico_id:
+                name_juridico = self.get_juridico_name_by_id(
+                    juridico_id, jwt_token)
+                email_juridico = self.get_juridico_email_by_id(
+                    juridico_id, jwt_token)
+                objecao_data['name_juridico_marca'] = name_juridico
+                objecao_data['email_juridico_marca'] = email_juridico
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao"
+            resp = requests.post(url, headers=headers, json=objecao_data)
+
+            if resp.status_code == 201:
+                try:
+                    # Tentar parsear a resposta JSON
+                    created_obj = resp.json()
+                    if created_obj and len(created_obj) > 0:
+                        return created_obj[0]
+                except:
+                    # Se não conseguir parsear, buscar a objeção recém-criada
+                    return self._buscar_objecao_recém_criada(objecao_data, jwt_token)
+            else:
+                st.warning(f"Erro ao inserir objeção: {resp.text}")
+                logging.error(f"Erro ao inserir objeção: {resp.text}")
+                return None
+
+        except Exception as e:
+            st.error(f"Erro ao inserir objeção: {str(e)}")
+            logging.error(f"Erro ao inserir objeção: {str(e)}")
+            return None
+
+    def _buscar_objecao_recém_criada(self, objecao_data: dict, jwt_token: str) -> dict:
+        """
+        Busca uma objeção recém-criada usando os dados principais
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            # Buscar pela marca, nomecliente, consultor e juridico_id
+            marca = objecao_data.get('marca', '')
+            nomecliente = objecao_data.get('nomecliente', '')
+            consultor_objecao = objecao_data.get('consultor_objecao', '')
+            juridico_id = objecao_data.get('juridico_id', '')
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?marca=eq.{marca}&nomecliente=eq.{nomecliente}&consultor_objecao=eq.{consultor_objecao}&juridico_id=eq.{juridico_id}&order=created_at.desc&limit=1"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0]
+
+            return None
+
+        except Exception as e:
+            st.error(f"Erro ao buscar objeção recém-criada: {str(e)}")
+            return None
+
+    def get_objecoes_by_consultor(self, consultor_id: str, jwt_token: str) -> list:
+        """
+        Busca objeções por consultor via REST API
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?consultor_objecao=eq.{consultor_id}&order=created_at.desc"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                return resp.json() if resp.json() else []
+            else:
+                st.warning(f"Erro ao buscar objeções: {resp.text}")
+                return []
+
+        except Exception as e:
+            st.error(f"Erro ao buscar objeções: {str(e)}")
+            return []
+
+    def get_objecoes_by_juridico(self, juridico_id: str, jwt_token: str) -> list:
+        """
+        Busca objeções criadas por um usuário jurídico via REST API
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?juridico_id=eq.{juridico_id}&order=created_at.desc"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                return resp.json() if resp.json() else []
+            else:
+                st.warning(f"Erro ao buscar objeções: {resp.text}")
+                return []
+
+        except Exception as e:
+            st.error(f"Erro ao buscar objeções: {str(e)}")
+            return []
+
+    def get_objecao_by_id(self, objecao_id: str, jwt_token: str) -> dict:
+        """
+        Busca uma objeção específica pelo ID
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?id=eq.{objecao_id}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                if data and len(data) > 0:
+                    return data[0]
+            return None
+
+        except Exception as e:
+            st.error(f"Erro ao buscar objeção: {str(e)}")
+            return None
+
+    def get_all_objecoes(self, jwt_token: str) -> list:
+        """
+        Busca todas as objeções (apenas para administradores)
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?order=created_at.desc"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                return resp.json() if resp.json() else []
+            else:
+                st.warning(f"Erro ao buscar objeções: {resp.text}")
+                return []
+
+        except Exception as e:
+            st.error(f"Erro ao buscar objeções: {str(e)}")
+            return []
+
+    def update_objecao_status(self, objecao_id: str, status: str, jwt_token: str) -> bool:
+        """
+        Atualiza o status de uma objeção
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?id=eq.{objecao_id}"
+            data = {"status_objecao": status}
+
+            resp = requests.patch(url, headers=headers, json=data)
+
+            if resp.status_code in (200, 204):
+                return True
+            else:
+                st.warning(f"Erro ao atualizar status: {resp.text}")
+                return False
+
+        except Exception as e:
+            st.error(f"Erro ao atualizar status: {str(e)}")
+            return False
+
+    def update_objecao_obejpdf(self, objecao_id, obejpdf_data, jwt_token=None):
+        """
+        Atualiza o campo obejpdf de uma objeção pelo ID via REST API do Supabase.
+        Para documentos enviados por funcionários.
+        """
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?id=eq.{objecao_id}"
+
+        # Usar JWT token passado como parâmetro ou da sessão
+        token = jwt_token or st.session_state.get('jwt_token')
+        if not token:
+            st.error("Token JWT não encontrado")
+            return False
+
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Salvar dados dos documentos como JSON
+        data = {"obejpdf": obejpdf_data}
+
+        try:
+            resp = requests.patch(url, headers=headers, json=data)
+            if resp.status_code not in (200, 204):
+                st.warning(f"Erro ao atualizar obejpdf: {resp.text}")
+                logging.error(f"Erro ao atualizar obejpdf: {resp.text}")
+                return False
+            return True
+        except Exception as e:
+            st.error(f"Erro na requisição: {str(e)}")
+            logging.error(f"Erro na requisição: {str(e)}")
+            return False
+
+    def update_objecao_peticaopdf(self, objecao_id, peticaopdf_data, jwt_token=None):
+        """
+        Atualiza o campo peticaopdf de uma objeção pelo ID via REST API do Supabase.
+        Para petições enviadas por advogados.
+        """
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?id=eq.{objecao_id}"
+
+        # Usar JWT token passado como parâmetro ou da sessão
+        token = jwt_token or st.session_state.get('jwt_token')
+        if not token:
+            st.error("Token JWT não encontrado")
+            return False
+
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Salvar dados dos documentos como JSON
+        data = {"peticaopdf": peticaopdf_data}
+
+        try:
+            resp = requests.patch(url, headers=headers, json=data)
+            if resp.status_code not in (200, 204):
+                st.warning(f"Erro ao atualizar peticaopdf: {resp.text}")
+                logging.error(f"Erro ao atualizar peticaopdf: {resp.text}")
+                return False
+            return True
+        except Exception as e:
+            st.error(f"Erro na requisição: {str(e)}")
+            logging.error(f"Erro na requisição: {str(e)}")
+            return False
+
+    def update_objecao_documentos(self, objecao_id, documentos_data, jwt_token=None):
+        """
+        Atualiza o campo documentos_objecao de uma objeção pelo ID via REST API do Supabase.
+        """
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/objecao?id=eq.{objecao_id}"
+
+        # Usar JWT token passado como parâmetro ou da sessão
+        token = jwt_token or st.session_state.get('jwt_token')
+        if not token:
+            st.error("Token JWT não encontrado")
+            return False
+
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Salvar dados dos documentos como JSON
+        data = {"documentos_objecao": documentos_data}
+
+        try:
+            resp = requests.patch(url, headers=headers, json=data)
+            if resp.status_code not in (200, 204):
+                st.warning(
+                    f"Erro ao atualizar documentos_objecao: {resp.text}")
+                logging.error(
+                    f"Erro ao atualizar documentos_objecao: {resp.text}")
+                return False
+            return True
+        except Exception as e:
+            st.error(f"Erro na requisição: {str(e)}")
+            logging.error(f"Erro na requisição: {str(e)}")
+            return False
+
+    def get_objecao_status_display(self, status: str) -> str:
+        """Retorna o texto de exibição para cada status de objeção"""
+        status_map = {
+            "pendente": "Pendente",
+            "recebido": "Recebido",
+            "em_analise": "Em Análise",
+            "concluido": "Concluído"
+        }
+        return status_map.get(status, status)
+
+    def get_objecao_status_icon(self, status: str) -> str:
+        """Retorna o ícone para cada status de objeção"""
+        icon_map = {
+            "pendente": "⏳",
+            "recebido": "📥",
+            "em_analise": "🔍",
+            "concluido": "✅"
+        }
+        return icon_map.get(status, "❓")
+
+    # ==================== MÉTODOS PARA PATENTES ====================
+
+    def insert_deposito_patente(self, data: dict, jwt_token: str) -> bool:
+        """
+        Insere um novo depósito de patente na tabela 'deposito_patente' via REST API do Supabase.
+        """
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente"
+            resp = requests.post(url, headers=headers, json=data)
+
+            if resp.status_code == 201:
+                return True
+            else:
+                st.warning(f"Erro ao inserir depósito de patente: {resp.text}")
                 logging.error(
                     f"Erro ao inserir depósito de patente: {resp.text}")
                 return False
 
-            return True
         except Exception as e:
             st.error(f"Erro ao inserir depósito de patente: {str(e)}")
             logging.error(f"Erro ao inserir depósito de patente: {str(e)}")
@@ -432,105 +1058,97 @@ class SupabaseAgent:
 
     def get_depositos_patente_para_funcionario(self, funcionario_id: str, jwt_token: str = None):
         """
-        Busca todos os depósitos de patente feitos por um funcionário via REST API com JWT token.
-        Args:
-            funcionario_id (str): ID do funcionário
-            jwt_token (str): Token JWT do usuário autenticado
-        Returns:
-            list: Lista de depósitos de patente
+        Busca depósitos de patente para um funcionário específico
         """
         try:
             import requests
 
-            # Usar JWT token passado como parâmetro ou da sessão
             token = jwt_token or st.session_state.get('jwt_token')
             if not token:
                 st.error("Token JWT não encontrado")
                 return []
 
-            # Usar REST API com JWT token
-            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?funcionario_id=eq.{funcionario_id}&order=created_at.desc"
             headers = {
                 "apikey": os.getenv("SUPABASE_KEY"),
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
 
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?funcionario_id=eq.{funcionario_id}&order=created_at.desc"
             resp = requests.get(url, headers=headers)
+
             if resp.status_code == 200:
-                return resp.json()
+                return resp.json() if resp.json() else []
             else:
-                st.warning(
-                    f"Erro ao buscar patentes do funcionário: {resp.text}")
-                logging.error(
-                    f"Erro ao buscar patentes do funcionário: {resp.text}")
+                st.warning(f"Erro ao buscar depósitos de patente: {resp.text}")
                 return []
 
         except Exception as e:
-            st.error(f"Erro ao buscar patentes do funcionário: {str(e)}")
-            logging.error(f"Erro ao buscar patentes do funcionário: {str(e)}")
+            st.error(f"Erro ao buscar depósitos de patente: {str(e)}")
             return []
 
     def get_depositos_patente_para_consultor(self, consultor_id: str, jwt_token: str = None):
         """
-        Busca todos os depósitos de patente associados a um consultor via REST API com JWT token.
-        Args:
-            consultor_id (str): ID do consultor
-            jwt_token (str): Token JWT do usuário autenticado
-        Returns:
-            list: Lista de depósitos de patente
+        Busca depósitos de patente para um consultor específico
         """
         try:
             import requests
 
-            # Usar JWT token passado como parâmetro ou da sessão
             token = jwt_token or st.session_state.get('jwt_token')
             if not token:
                 st.error("Token JWT não encontrado")
                 return []
 
-            # Usar REST API com JWT token
-            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?consultor=eq.{consultor_id}&order=created_at.desc"
             headers = {
                 "apikey": os.getenv("SUPABASE_KEY"),
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
 
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?consultor=eq.{consultor_id}&order=created_at.desc"
             resp = requests.get(url, headers=headers)
+
             if resp.status_code == 200:
-                return resp.json()
+                return resp.json() if resp.json() else []
             else:
-                st.warning(
-                    f"Erro ao buscar patentes do consultor: {resp.text}")
-                logging.error(
-                    f"Erro ao buscar patentes do consultor: {resp.text}")
+                st.warning(f"Erro ao buscar depósitos de patente: {resp.text}")
                 return []
 
         except Exception as e:
-            st.error(f"Erro ao buscar patentes do consultor: {str(e)}")
-            logging.error(f"Erro ao buscar patentes do consultor: {str(e)}")
+            st.error(f"Erro ao buscar depósitos de patente: {str(e)}")
             return []
 
     def update_patente_status(self, patente_id: str, status: str, jwt_token: str) -> bool:
         """
-        Atualiza o status de uma patente via REST API do Supabase.
+        Atualiza o status de uma patente
         """
-        import requests
-        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?id=eq.{patente_id}"
-        headers = self._get_headers(jwt_token, content_type=True)
-        data = {"status_patente": status}
-        resp = requests.patch(url, headers=headers, json=data)
-        if resp.status_code in (200, 204):
-            return True
-        else:
-            st.warning(f"Erro ao atualizar status da patente: {resp.text}")
-            logging.error(f"Erro ao atualizar status da patente: {resp.text}")
+        try:
+            import requests
+
+            headers = {
+                "apikey": os.getenv("SUPABASE_KEY"),
+                "Authorization": f"Bearer {jwt_token}",
+                "Content-Type": "application/json"
+            }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?id=eq.{patente_id}"
+            data = {"status_patente": status}
+
+            resp = requests.patch(url, headers=headers, json=data)
+
+            if resp.status_code in (200, 204):
+                return True
+            else:
+                st.warning(f"Erro ao atualizar status da patente: {resp.text}")
+                return False
+
+        except Exception as e:
+            st.error(f"Erro ao atualizar status da patente: {str(e)}")
             return False
 
     def update_patente_relatorio(self, patente_id, relatorio_data, jwt_token=None):
         """
-        Atualiza o campo relatorio_patente de uma patente pelo ID via REST API do Supabase.
+        Atualiza o campo relatorio de uma patente pelo ID via REST API do Supabase.
         """
         import requests
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?id=eq.{patente_id}"
@@ -548,14 +1166,13 @@ class SupabaseAgent:
         }
 
         # Salvar dados do relatório como JSON
-        data = {"relatorio_patente": relatorio_data}
+        data = {"relatorio": relatorio_data}
 
         try:
             resp = requests.patch(url, headers=headers, json=data)
             if resp.status_code not in (200, 204):
-                st.warning(f"Erro ao atualizar relatorio_patente: {resp.text}")
-                logging.error(
-                    f"Erro ao atualizar relatorio_patente: {resp.text}")
+                st.warning(f"Erro ao atualizar relatório: {resp.text}")
+                logging.error(f"Erro ao atualizar relatório: {resp.text}")
                 return False
             return True
         except Exception as e:
@@ -568,8 +1185,12 @@ class SupabaseAgent:
         status_map = {
             "pendente": "Pendente",
             "recebido": "Recebido",
-            "fazendo_relatorio": "Fazendo Relatório",
-            "relatorio_concluido": "Relatório Concluído"
+            "aguardando_informacoes": "Aguardando Informações",
+            "aguardando_elaboracao": "Aguardando Elaboração",
+            "relatorio_sendo_elaborado": "Relatório Sendo Elaborado",
+            "relatorio_enviado_aprovacao": "Relatório Enviado para Aprovação",
+            "relatorio_aprovado": "Relatório Aprovado",
+            "concluido": "Concluído"
         }
         return status_map.get(status, status)
 
@@ -578,51 +1199,42 @@ class SupabaseAgent:
         icon_map = {
             "pendente": "⏳",
             "recebido": "📥",
-            "fazendo_relatorio": "📝",
-            "relatorio_concluido": "✅"
+            "aguardando_informacoes": "❓",
+            "aguardando_elaboracao": "⏸️",
+            "relatorio_sendo_elaborado": "📝",
+            "relatorio_enviado_aprovacao": "📤",
+            "relatorio_aprovado": "✅",
+            "concluido": "🎉"
         }
         return icon_map.get(status, "❓")
 
     def get_all_depositos_patente(self, jwt_token: str = None):
         """
-        Busca todos os depósitos de patente (para administradores) via REST API com JWT token.
-        Args:
-            jwt_token (str): Token JWT do usuário autenticado
-        Returns:
-            list: Lista de todos os depósitos de patente
+        Busca todos os depósitos de patente (apenas para administradores)
         """
         try:
             import requests
 
-            # Usar JWT token passado como parâmetro ou da sessão
             token = jwt_token or st.session_state.get('jwt_token')
             if not token:
                 st.error("Token JWT não encontrado")
                 return []
 
-            # Usar REST API com JWT token
-            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?order=created_at.desc"
             headers = {
                 "apikey": os.getenv("SUPABASE_KEY"),
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
 
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?order=created_at.desc"
             resp = requests.get(url, headers=headers)
+
             if resp.status_code == 200:
-                return resp.json()
+                return resp.json() if resp.json() else []
             else:
-                st.warning(f"Erro ao buscar patentes: {resp.text}")
-                logging.error(f"Erro ao buscar patentes: {resp.text}")
+                st.warning(f"Erro ao buscar depósitos de patente: {resp.text}")
                 return []
 
         except Exception as e:
-            st.error(f"Erro ao buscar patentes: {str(e)}")
-            logging.error(f"Erro ao buscar patentes: {str(e)}")
+            st.error(f"Erro ao buscar depósitos de patente: {str(e)}")
             return []
-
-
-# Exemplo de uso:
-# agent = SupabaseAgent()
-# user = agent.login(email, password)
-# perfil = agent.get_profile(user['id'])

@@ -2,6 +2,7 @@
 import streamlit as st
 from marcas import views as marcas_views
 from patentes import views as patentes_views
+from objeções import views as objeções_views
 from marcas.busca_manager import BuscaManager, get_user_attr
 from form_agent import FormAgent
 from email_agent import EmailAgent
@@ -29,13 +30,43 @@ def main():
         config["smtp_port"],
         config["smtp_user"],
         config["smtp_pass"],
-        config["destinatarios"]
+        config["destinatarios"],
+        config["destinatario_juridico"],
+        config["destinatario_juridico_um"]
     )
     busca_manager = BuscaManager(supabase_agent, email_agent)
     form_agent = FormAgent()
 
     # Inicializar o gerenciador de permissões
     permission_manager = CargoPermissionManager(supabase_agent)
+
+    # Inicializar supabase_agent e email_agent no session_state
+    if "supabase_agent" not in st.session_state:
+        st.session_state.supabase_agent = supabase_agent
+
+    if "email_agent" not in st.session_state:
+        st.session_state.email_agent = email_agent
+
+    # Garantir que email_agent sempre esteja disponível
+    st.session_state.email_agent = email_agent
+
+    # Verificação de segurança para email_agent
+    if not hasattr(st.session_state, 'email_agent') or st.session_state.email_agent is None:
+        st.session_state.email_agent = email_agent
+
+    # Garantir que email_agent esteja sempre disponível
+    try:
+        if st.session_state.email_agent is None:
+            st.session_state.email_agent = email_agent
+    except AttributeError:
+        st.session_state.email_agent = email_agent
+
+    # Verificação adicional para garantir que email_agent esteja disponível
+    if "email_agent" not in st.session_state:
+        st.session_state.email_agent = email_agent
+
+    # Garantir que email_agent esteja sempre disponível no session_state
+    st.session_state.email_agent = email_agent
 
     if "user" not in st.session_state:
         render_login_screen(supabase_agent)
@@ -46,6 +77,9 @@ def main():
     # Obter informações do usuário
     user_id = get_user_id(st.session_state.user)
     user_info = permission_manager.get_user_display_info(user_id)
+
+    # Obter informações do usuário
+    cargo_info = permission_manager.get_user_cargo_info(user_id)
 
     # Filtrar menu baseado em permissões
     available_menu_items = permission_manager.get_available_menu_items(user_id)
@@ -64,6 +98,11 @@ def main():
                 f"</span>{user_info['nome']}</div>",
                 unsafe_allow_html=True
             )
+
+        # Verificar se há itens no menu
+        if not available_menu_items:
+            st.error("Nenhuma opção de menu disponível para seu perfil.")
+            return
 
         # Menu filtrado por permissões
         from streamlit_option_menu import option_menu
@@ -142,6 +181,20 @@ def main():
             return
 
         patentes_views.minhas_patentes(email_agent)
+
+    elif escolha == "Solicitar Objeção de Marca":
+        if not permission_manager.check_page_permission(user_id, "Solicitar Objeção de Marca"):
+            st.error("Você não tem permissão para acessar esta funcionalidade.")
+            return
+
+        objeções_views.solicitar_objecao(email_agent)
+
+    elif escolha == "Minhas Objeções":
+        if not permission_manager.check_page_permission(user_id, "Minhas Objeções"):
+            st.error("Você não tem permissão para acessar esta funcionalidade.")
+            return
+
+        objeções_views.minhas_objecoes(email_agent)
 
 
 if __name__ == "__main__":

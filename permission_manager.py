@@ -4,6 +4,21 @@ from typing import List, Dict, Any, Optional
 
 
 # Definição dos cargos e suas permissões
+CARGOS_JURIDICO = {
+    'advogado': {
+        'permissions': ['ver_proprias_objecoes'],
+        'menu_items': ['Minhas Objeções']
+    },
+    'funcionario': {
+        'permissions': ['solicitar_objecao', 'ver_proprias_objecoes'],
+        'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
+    },
+    'administrador': {
+        'permissions': ['solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes'],
+        'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
+    }
+}
+
 CARGOS_FUNCIONARIO = {
     'funcionario': {
         'permissions': ['solicitar_patente', 'ver_proprias_patentes'],
@@ -21,16 +36,16 @@ CARGOS_FUNCIONARIO = {
 
 CARGOS_CONSULTOR = {
     'consultor': {
-        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes']
+        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes'],
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
     },
     'avaliador de marca': {
         'permissions': ['ver_proprias_buscas'],
         'menu_items': ['Minhas Buscas']
     },
     'admin': {
-        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes']
+        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes'],
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
     }
 }
 
@@ -43,58 +58,88 @@ class CargoPermissionManager:
 
     def __init__(self, supabase_agent: SupabaseAgent):
         self.supabase_agent = supabase_agent
+        self.cargos_juridico = CARGOS_JURIDICO
         self.cargos_funcionario = CARGOS_FUNCIONARIO
         self.cargos_consultor = CARGOS_CONSULTOR
 
     def get_user_cargo_info(self, user_id: str) -> Dict[str, Any]:
         """
         Retorna informações completas do cargo do usuário.
-        Verifica primeiro na tabela funcionario, depois na tabela perfil.
+        Verifica todas as tabelas e combina permissões quando usuário está em múltiplas tabelas.
         """
-        # Primeiro verificar se é funcionário
+        # Verificar em todas as tabelas
+        juridico = self.supabase_agent.get_juridico_by_id(user_id)
         funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
-        if funcionario:
-            cargo_func = funcionario.get('cargo_func', 'funcionario')
-            is_admin = funcionario.get('is_admin', False)
-
-            return {
-                'tipo': 'funcionario',
-                'cargo': cargo_func,
-                'is_admin': is_admin,
-                'dados': funcionario,
-                'nome': funcionario.get('name', ''),
-                'email': funcionario.get('email', '')
-            }
-
-        # Se não é funcionário, verificar se é consultor na tabela perfil
         perfil = self.supabase_agent.get_profile(user_id)
-        if perfil:
-            is_admin = perfil.get('is_admin', False)
-            # Usar o cargo real da tabela perfil
-            cargo = perfil.get('cargo', 'consultor')
 
-            return {
-                'tipo': 'consultor',
-                'cargo': cargo,
-                'is_admin': is_admin,
-                'dados': perfil,
-                'nome': perfil.get('name', ''),
-                'email': perfil.get('email', '')
-            }
+        # Determinar tipo principal e permissões combinadas
+        tipos_encontrados = []
+        is_admin = False
+        nome = 'Usuário'
+        email = ''
+
+        if juridico:
+            tipos_encontrados.append('juridico')
+            is_admin = is_admin or juridico.get('is_admin', False)
+            nome = juridico.get('name', nome)
+            email = juridico.get('email', email)
+
+        if funcionario:
+            tipos_encontrados.append('funcionario')
+            is_admin = is_admin or funcionario.get('is_admin', False)
+            if not nome or nome == 'Usuário':
+                nome = funcionario.get('name', nome)
+            if not email:
+                email = funcionario.get('email', email)
+
+        if perfil:
+            tipos_encontrados.append('consultor')
+            is_admin = is_admin or perfil.get('is_admin', False)
+            if not nome or nome == 'Usuário':
+                nome = perfil.get('name', nome)
+            if not email:
+                email = perfil.get('email', email)
 
         # Se não encontrou em nenhuma tabela, tratar como consultor básico
+        if not tipos_encontrados:
+            return {
+                'tipo': 'consultor',
+                'cargo': 'consultor',
+                'is_admin': False,
+                'dados': None,
+                'nome': 'Usuário',
+                'email': '',
+                'tipos_multiplos': []
+            }
+
+        # Se está em múltiplas tabelas, priorizar funcionario > juridico > consultor
+        if 'funcionario' in tipos_encontrados:
+            tipo_principal = 'funcionario'
+            cargo = funcionario.get('cargo_func', 'funcionario')
+            dados = funcionario
+        elif 'juridico' in tipos_encontrados:
+            tipo_principal = 'juridico'
+            cargo = juridico.get('cargo', 'advogado')
+            dados = juridico
+        else:
+            tipo_principal = 'consultor'
+            cargo = perfil.get('cargo', 'consultor')
+            dados = perfil
+
         return {
-            'tipo': 'consultor',
-            'cargo': 'consultor',
-            'is_admin': False,
-            'dados': None,
-            'nome': 'Usuário',
-            'email': ''
+            'tipo': tipo_principal,
+            'cargo': cargo,
+            'is_admin': is_admin,
+            'dados': dados,
+            'nome': nome,
+            'email': email,
+            'tipos_multiplos': tipos_encontrados
         }
 
     def has_permission(self, user_id: str, permission: str) -> bool:
         """
         Verifica se usuário tem permissão específica.
+        Combina permissões de todas as tabelas onde o usuário está presente.
 
         Args:
             user_id: ID do usuário
@@ -104,26 +149,40 @@ class CargoPermissionManager:
             bool: True se tem permissão, False caso contrário
         """
         cargo_info = self.get_user_cargo_info(user_id)
-        tipo = cargo_info['tipo']
-        cargo = cargo_info['cargo']
+        tipos_multiplos = cargo_info.get(
+            'tipos_multiplos', [cargo_info['tipo']])
         is_admin = cargo_info['is_admin']
 
         # Se é admin (exatamente True), tem acesso total
         if is_admin is True:
             return True
 
-        if tipo == 'funcionario':
-            cargo_permissions = self.cargos_funcionario.get(
-                cargo, {}).get('permissions', [])
-        else:
-            cargo_permissions = self.cargos_consultor.get(
-                cargo, {}).get('permissions', [])
+        # Combinar permissões de todas as tabelas onde o usuário está presente
+        all_permissions = set()
 
-        return '*' in cargo_permissions or permission in cargo_permissions
+        for tipo in tipos_multiplos:
+            if tipo == 'juridico':
+                cargo = cargo_info['cargo']
+                permissions = self.cargos_juridico.get(
+                    cargo, {}).get('permissions', [])
+                all_permissions.update(permissions)
+            elif tipo == 'funcionario':
+                cargo = cargo_info['cargo']
+                permissions = self.cargos_funcionario.get(
+                    cargo, {}).get('permissions', [])
+                all_permissions.update(permissions)
+            elif tipo == 'consultor':
+                cargo = cargo_info['cargo']
+                permissions = self.cargos_consultor.get(
+                    cargo, {}).get('permissions', [])
+                all_permissions.update(permissions)
+
+        return '*' in all_permissions or permission in all_permissions
 
     def get_available_menu_items(self, user_id: str) -> List[str]:
         """
         Retorna itens de menu disponíveis para o usuário.
+        Combina permissões de todas as tabelas onde o usuário está presente.
 
         Args:
             user_id: ID do usuário
@@ -132,14 +191,58 @@ class CargoPermissionManager:
             List[str]: Lista de itens de menu disponíveis
         """
         cargo_info = self.get_user_cargo_info(user_id)
-        tipo = cargo_info['tipo']
-        cargo = cargo_info['cargo']
+        tipos_multiplos = cargo_info.get(
+            'tipos_multiplos', [cargo_info['tipo']])
 
-        # Menu baseado apenas no cargo, não no is_admin
-        if tipo == 'funcionario':
-            return self.cargos_funcionario.get(cargo, {}).get('menu_items', [])
-        else:
-            return self.cargos_consultor.get(cargo, {}).get('menu_items', [])
+        # Combinar itens de menu de todas as tabelas
+        menu_items = set()
+
+        for tipo in tipos_multiplos:
+            if tipo == 'juridico':
+                cargo = cargo_info['cargo']
+                items = self.cargos_juridico.get(
+                    cargo, {}).get('menu_items', [])
+                menu_items.update(items)
+            elif tipo == 'funcionario':
+                cargo = cargo_info['cargo']
+                items = self.cargos_funcionario.get(
+                    cargo, {}).get('menu_items', [])
+                menu_items.update(items)
+            elif tipo == 'consultor':
+                cargo = cargo_info['cargo']
+                items = self.cargos_consultor.get(
+                    cargo, {}).get('menu_items', [])
+                menu_items.update(items)
+
+        # Ordenar itens de menu de forma lógica
+        return self._ordenar_menu_items(list(menu_items))
+
+    def _ordenar_menu_items(self, menu_items: List[str]) -> List[str]:
+        """
+        Ordena os itens de menu de forma lógica, agrupando funcionalidades relacionadas.
+        """
+        # Definir ordem lógica dos itens
+        ordem_logica = [
+            'Solicitar Busca',
+            'Minhas Buscas',
+            'Solicitar Serviço de Patente',
+            'Minhas Patentes',
+            'Solicitar Objeção de Marca',
+            'Minhas Objeções'
+        ]
+
+        # Filtrar apenas os itens que existem no menu do usuário
+        itens_ordenados = []
+        for item in ordem_logica:
+            if item in menu_items:
+                itens_ordenados.append(item)
+
+        # Adicionar qualquer item que não esteja na ordem lógica (por segurança)
+        for item in menu_items:
+            if item not in itens_ordenados:
+                itens_ordenados.append(item)
+
+        return itens_ordenados
 
     def get_user_display_info(self, user_id: str) -> Dict[str, Any]:
         """
@@ -177,7 +280,9 @@ class CargoPermissionManager:
             'Solicitar Busca': 'search',
             'Minhas Buscas': 'list-task',
             'Solicitar Serviço de Patente': 'file-earmark-arrow-up',
-            'Minhas Patentes': 'file-earmark-text'
+            'Minhas Patentes': 'file-earmark-text',
+            'Solicitar Objeção de Marca': 'exclamation-triangle',
+            'Minhas Objeções': 'clipboard-check'
         }
 
         return [icon_mapping.get(item, 'question') for item in menu_items]
@@ -197,7 +302,9 @@ class CargoPermissionManager:
             'Solicitar Busca': 'solicitar_busca',
             'Minhas Buscas': 'ver_proprias_buscas',
             'Solicitar Serviço de Patente': 'solicitar_patente',
-            'Minhas Patentes': 'ver_proprias_patentes'
+            'Minhas Patentes': 'ver_proprias_patentes',
+            'Solicitar Objeção de Marca': 'solicitar_objecao',
+            'Minhas Objeções': 'ver_proprias_objecoes'
         }
 
         required_permission = page_permissions.get(page_name)

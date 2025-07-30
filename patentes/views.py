@@ -12,12 +12,33 @@ class PatenteManager:
     # Status possíveis para as patentes
     STATUS_PENDENTE = "pendente"
     STATUS_RECEBIDO = "recebido"
-    STATUS_FAZENDO_RELATORIO = "fazendo_relatorio"
-    STATUS_RELATORIO_CONCLUIDO = "relatorio_concluido"
+    STATUS_AGUARDANDO_INFORMACOES = "aguardando_informacoes"
+    STATUS_AGUARDANDO_ELABORACAO = "aguardando_elaboracao"
+    STATUS_RELATORIO_SENDO_ELABORADO = "relatorio_sendo_elaborado"
+    STATUS_RELATORIO_ENVIADO_APROVACAO = "relatorio_enviado_aprovacao"
+    STATUS_RELATORIO_APROVADO = "relatorio_aprovado"
+    STATUS_CONCLUIDO = "concluido"
 
     def __init__(self, supabase_agent, email_agent):
         self.supabase_agent = supabase_agent
         self.email_agent = email_agent
+
+    def verificar_permissao_status_patente(self, user_id: str) -> bool:
+        """
+        Verifica se o usuário tem permissão para alterar status de patentes.
+        Apenas usuários is_admin com cargo 'engenheiro' podem alterar status.
+        """
+        # Buscar funcionário
+        funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
+        if not funcionario:
+            return False
+
+        # Verificar se é admin e tem cargo engenheiro
+        is_admin = funcionario.get('is_admin', False)
+        # Usar cargo_func como no permission_manager
+        cargo = funcionario.get('cargo_func', 'funcionario')
+
+        return is_admin and cargo == 'engenheiro'
 
     def atualizar_status_patente(self, patente_id: str, novo_status: str) -> bool:
         """
@@ -26,6 +47,16 @@ class PatenteManager:
         if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
             st.error("Você precisa estar logado para acessar esta funcionalidade.")
             st.stop()
+
+        # Verificar permissão para alterar status
+        user_id = st.session_state.user['id'] if isinstance(
+            st.session_state.user, dict) else st.session_state.user.id
+
+        if not self.verificar_permissao_status_patente(user_id):
+            st.error(
+                "Você não tem permissão para alterar o status de patentes. Apenas engenheiros administradores podem fazer esta alteração.")
+            return False
+
         ok = self.supabase_agent.update_patente_status(
             patente_id, novo_status, st.session_state.jwt_token)
         if ok:
@@ -42,7 +73,17 @@ class PatenteManager:
         Determina o status atual baseado em status_patente persistente no banco.
         """
         status = patente.get('status_patente', self.STATUS_PENDENTE)
-        if status not in [self.STATUS_PENDENTE, self.STATUS_RECEBIDO, self.STATUS_FAZENDO_RELATORIO, self.STATUS_RELATORIO_CONCLUIDO]:
+        status_validos = [
+            self.STATUS_PENDENTE,
+            self.STATUS_RECEBIDO,
+            self.STATUS_AGUARDANDO_INFORMACOES,
+            self.STATUS_AGUARDANDO_ELABORACAO,
+            self.STATUS_RELATORIO_SENDO_ELABORADO,
+            self.STATUS_RELATORIO_ENVIADO_APROVACAO,
+            self.STATUS_RELATORIO_APROVADO,
+            self.STATUS_CONCLUIDO
+        ]
+        if status not in status_validos:
             return self.STATUS_PENDENTE
         return status
 
@@ -54,8 +95,12 @@ class PatenteManager:
         status_dict = {
             self.STATUS_PENDENTE: [],
             self.STATUS_RECEBIDO: [],
-            self.STATUS_FAZENDO_RELATORIO: [],
-            self.STATUS_RELATORIO_CONCLUIDO: []
+            self.STATUS_AGUARDANDO_INFORMACOES: [],
+            self.STATUS_AGUARDANDO_ELABORACAO: [],
+            self.STATUS_RELATORIO_SENDO_ELABORADO: [],
+            self.STATUS_RELATORIO_ENVIADO_APROVACAO: [],
+            self.STATUS_RELATORIO_APROVADO: [],
+            self.STATUS_CONCLUIDO: []
         }
         for patente in patentes:
             status = self.get_status_atual(patente)
@@ -224,7 +269,10 @@ def minhas_patentes(email_agent):
 
     # Verificar se é funcionário e se tem permissões de admin
     funcionario = supabase_agent.get_funcionario_by_id(user_id)
-    is_admin = funcionario and funcionario.get('is_admin', False)
+
+    # Verificar se é engenheiro com permissões de admin (única verificação necessária)
+    is_admin = funcionario and funcionario.get('is_admin', False) and funcionario.get(
+        'cargo_func', 'funcionario') == 'engenheiro'
 
     patentes = []
 
@@ -294,8 +342,14 @@ def minhas_patentes(email_agent):
         status_keys = [
             (patente_manager.STATUS_PENDENTE, "Pendentes"),
             (patente_manager.STATUS_RECEBIDO, "Recebidas"),
-            (patente_manager.STATUS_FAZENDO_RELATORIO, "Fazendo Relatório"),
-            (patente_manager.STATUS_RELATORIO_CONCLUIDO, "Relatórios Concluídos")
+            (patente_manager.STATUS_AGUARDANDO_INFORMACOES, "Aguardando Informações"),
+            (patente_manager.STATUS_AGUARDANDO_ELABORACAO, "Aguardando Elaboração"),
+            (patente_manager.STATUS_RELATORIO_SENDO_ELABORADO,
+             "Relatório Sendo Elaborado"),
+            (patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO,
+             "Relatório Enviado para Aprovação"),
+            (patente_manager.STATUS_RELATORIO_APROVADO, "Relatório Aprovado"),
+            (patente_manager.STATUS_CONCLUIDO, "Concluído")
         ]
 
         for status, label in status_keys:
@@ -315,16 +369,20 @@ def minhas_patentes(email_agent):
                     renderizar_patente(patente, patente_manager, is_admin)
     else:
         # Interface para usuários normais
-        enviadas = (patentes_por_status[patente_manager.STATUS_PENDENTE] +
-                    patentes_por_status[patente_manager.STATUS_RECEBIDO] +
-                    patentes_por_status[patente_manager.STATUS_FAZENDO_RELATORIO])
-        concluidas = patentes_por_status[patente_manager.STATUS_RELATORIO_CONCLUIDO]
+        em_andamento = (patentes_por_status[patente_manager.STATUS_PENDENTE] +
+                        patentes_por_status[patente_manager.STATUS_RECEBIDO] +
+                        patentes_por_status[patente_manager.STATUS_AGUARDANDO_INFORMACOES] +
+                        patentes_por_status[patente_manager.STATUS_AGUARDANDO_ELABORACAO] +
+                        patentes_por_status[patente_manager.STATUS_RELATORIO_SENDO_ELABORADO] +
+                        patentes_por_status[patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO] +
+                        patentes_por_status[patente_manager.STATUS_RELATORIO_APROVADO])
+        concluidas = patentes_por_status[patente_manager.STATUS_CONCLUIDO]
 
         abas = []
         labels = []
-        if enviadas:
-            labels.append("Enviadas")
-            abas.append(enviadas)
+        if em_andamento:
+            labels.append("Em Andamento")
+            abas.append(em_andamento)
         if concluidas:
             labels.append("Concluídas")
             abas.append(concluidas)
@@ -423,8 +481,8 @@ def renderizar_patente(patente, patente_manager, is_admin):
         if is_admin:
             st.markdown("---")
 
-            # Upload e envio de relatório (apenas quando status for "Fazendo Relatório" ou "Relatório Concluído")
-            if status in [patente_manager.STATUS_FAZENDO_RELATORIO, patente_manager.STATUS_RELATORIO_CONCLUIDO]:
+            # Upload e envio de relatório (apenas quando status for "Relatório Sendo Elaborado" ou "Relatório Aprovado")
+            if status in [patente_manager.STATUS_RELATORIO_SENDO_ELABORADO, patente_manager.STATUS_RELATORIO_APROVADO]:
                 st.write("**Upload do relatório:**")
                 uploaded_files = st.file_uploader(
                     "Selecione os PDFs do relatório",
@@ -437,10 +495,10 @@ def renderizar_patente(patente, patente_manager, is_admin):
                 if uploaded_files and len(uploaded_files) > 0:
                     if st.button("📤 Enviar Relatório", key=f"enviar_relatorio_{patente['id']}"):
                         if patente_manager.enviar_relatorio_patente(patente, uploaded_files):
-                            # Atualizar status para "Relatório Concluído" após envio bem-sucedido
-                            if status == patente_manager.STATUS_FAZENDO_RELATORIO:
+                            # Atualizar status para "Relatório Aprovado" após envio bem-sucedido
+                            if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
                                 patente_manager.atualizar_status_patente(
-                                    patente['id'], patente_manager.STATUS_RELATORIO_CONCLUIDO)
+                                    patente['id'], patente_manager.STATUS_RELATORIO_APROVADO)
                             st.success("Relatório enviado com sucesso!")
                             st.rerun()
                 else:
@@ -448,9 +506,9 @@ def renderizar_patente(patente, patente_manager, is_admin):
                     col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
 
                     with col1:
-                        if status == patente_manager.STATUS_FAZENDO_RELATORIO:
-                            if st.button("✅ Relatório Concluído", key=f"concluido_{patente['id']}"):
-                                if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_CONCLUIDO):
+                        if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
+                            if st.button("✅ Aprovado", key=f"aprovado_{patente['id']}"):
+                                if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_APROVADO):
                                     st.rerun()
 
                     with col2:
@@ -464,9 +522,9 @@ def renderizar_patente(patente, patente_manager, is_admin):
                     with col4:
                         # Espaço reservado para futuras ações
                         pass
-        else:
-            # Para outros status, mostrar botões normais
-            col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+
+            # Botões de alteração de status para engenheiros administradores
+            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
             with col1:
                 if status == patente_manager.STATUS_PENDENTE:
@@ -474,8 +532,28 @@ def renderizar_patente(patente, patente_manager, is_admin):
                         if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RECEBIDO):
                             st.rerun()
                 elif status == patente_manager.STATUS_RECEBIDO:
-                    if st.button("📝 Fazendo Relatório", key=f"fazendo_{patente['id']}"):
-                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_FAZENDO_RELATORIO):
+                    if st.button("📋 Aguardando Info", key=f"documentos_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_AGUARDANDO_INFORMACOES):
+                            st.rerun()
+                elif status == patente_manager.STATUS_AGUARDANDO_INFORMACOES:
+                    if st.button("⏸️ Aguardando", key=f"elaboracao_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_AGUARDANDO_ELABORACAO):
+                            st.rerun()
+                elif status == patente_manager.STATUS_AGUARDANDO_ELABORACAO:
+                    if st.button("📝 Elaborando Relatório", key=f"elaborando_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_SENDO_ELABORADO):
+                            st.rerun()
+                elif status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
+                    if st.button("📤 Para Aprovação", key=f"enviado_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO):
+                            st.rerun()
+                elif status == patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO:
+                    if st.button("✅ Relatório Aprovado", key=f"aprovado_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_APROVADO):
+                            st.rerun()
+                elif status == patente_manager.STATUS_RELATORIO_APROVADO:
+                    if st.button("🎉 Concluído", key=f"concluido_{patente['id']}"):
+                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_CONCLUIDO):
                             st.rerun()
 
             with col2:
@@ -489,6 +567,8 @@ def renderizar_patente(patente, patente_manager, is_admin):
             with col4:
                 # Espaço reservado para futuras ações
                 pass
+        # Usuários não-admin não devem ver botões de alteração de status
+        # (Removido completamente - não há botões para usuários normais)
 
         st.markdown(
             f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {status_icon} {status_text}</div>", unsafe_allow_html=True)

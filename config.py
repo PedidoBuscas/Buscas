@@ -12,16 +12,20 @@ def carregar_configuracoes():
     """
     load_dotenv()
 
-    return {
+    config = {
         "smtp_host": os.getenv("smtp_host", "smtp.gmail.com"),
         "smtp_port": int(os.getenv("smtp_port", 587)),
         "smtp_user": os.getenv("smtp_user", ""),
         "smtp_pass": os.getenv("smtp_pass", ""),
         "destinatarios": os.getenv("destinatarios", "").split(","),
         "destinatario_enge": os.getenv("destinatario_enge", ""),
+        "destinatario_juridico": os.getenv("destinatario_juridico", "").strip(),
+        "destinatario_juridico_um": os.getenv("destinatario_juridico_um", "").strip(),
         "supabase_url": os.getenv("SUPABASE_URL"),
         "supabase_key": os.getenv("SUPABASE_KEY")
     }
+
+    return config
 
 
 def configurar_logging():
