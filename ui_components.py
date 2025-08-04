@@ -312,6 +312,9 @@ def render_login_screen(supabase_agent):
                     st.error("Não foi possível obter o ID do usuário.")
                     return
 
+                # Limpar cache de dados do usuário anterior
+                st.cache_data.clear()
+
                 from classificador_agent import carregar_classificador_inpi_json
                 with st.spinner("Carregando Classificador INPI..."):
                     st.session_state.classificador_inpi = carregar_classificador_inpi_json()
@@ -606,3 +609,20 @@ def exibir_especificacoes_pdf(busca, pdf):
         """,
         unsafe_allow_html=True
     )
+
+
+def limpar_session_state():
+    """Limpa o session_state e cache para logout"""
+    # Limpar cache
+    st.cache_data.clear()
+
+    # Limpar session_state
+    keys_to_clear = [
+        'user', 'jwt_token', 'consultor_nome', 'consultor_email',
+        'classificador_inpi', 'enviando_pedido', 'sucesso',
+        'form_nonce', 'marcas', 'supabase_agent', 'email_agent'
+    ]
+
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
