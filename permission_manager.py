@@ -14,7 +14,7 @@ CARGOS_JURIDICO = {
         'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
     },
     'administrador': {
-        'permissions': ['solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes'],
+        'permissions': ['solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
         'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
     }
 }
@@ -29,22 +29,22 @@ CARGOS_FUNCIONARIO = {
         'menu_items': ['Minhas Patentes']
     },
     'administrador': {
-        'permissions': ['solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'gerenciar_buscas', 'ver_todas_buscas'],
+        'permissions': ['solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'gerenciar_buscas', 'ver_todas_buscas', 'relatorio_custos'],
         'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes']
     }
 }
 
 CARGOS_CONSULTOR = {
     'consultor': {
-        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes'],
+        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'relatorio_custos_proprio'],
         'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
     },
     'avaliador de marca': {
-        'permissions': ['ver_proprias_buscas'],
+        'permissions': ['ver_proprias_buscas', 'relatorio_custos_proprio'],
         'menu_items': ['Minhas Buscas']
     },
     'admin': {
-        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes'],
+        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
         'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
     }
 }
@@ -304,11 +304,21 @@ class CargoPermissionManager:
             'Solicitar Serviço de Patente': 'solicitar_patente',
             'Minhas Patentes': 'ver_proprias_patentes',
             'Solicitar Objeção de Marca': 'solicitar_objecao',
-            'Minhas Objeções': 'ver_proprias_objecoes'
+            'Minhas Objeções': 'ver_proprias_objecoes',
+            'Relatório de Custos': 'relatorio_custos'
         }
 
         required_permission = page_permissions.get(page_name)
+
         if not required_permission:
             return True  # Se não há permissão definida, permite acesso
+
+        # Para relatório de custos, verificar se é admin ou tem permissão própria
+        if page_name == "Relatório de Custos":
+            has_relatorio_custos = self.has_permission(
+                user_id, 'relatorio_custos')
+            has_relatorio_custos_proprio = self.has_permission(
+                user_id, 'relatorio_custos_proprio')
+            return has_relatorio_custos or has_relatorio_custos_proprio
 
         return self.has_permission(user_id, required_permission)

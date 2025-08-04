@@ -303,27 +303,185 @@ def render_login_screen(supabase_agent):
     login_btn = st.button("Entrar")
 
     if login_btn:
+        # Verificar se já está tentando fazer login para evitar múltiplas tentativas
+        if 'login_in_progress' in st.session_state and st.session_state.login_in_progress:
+            st.warning("Login em andamento. Aguarde...")
+            return
+
+        # Marcar que o login está em andamento
+        st.session_state.login_in_progress = True
+
+        # Verificar se deve mostrar erro (isso deve vir ANTES de qualquer CSS)
+        if 'show_login_error' in st.session_state and st.session_state.show_login_error:
+            st.markdown("""
+            <div style="
+                background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+                color: white;
+                padding: 25px;
+                border-radius: 15px;
+                margin: 20px 0;
+                text-align: center;
+                box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+                animation: slideInUp 0.6s ease-out;
+                border: 3px solid #d32f2f;
+                min-width: 300px;
+                position: relative;
+                z-index: 1001;
+            ">
+                <div style="font-size: 28px; margin-bottom: 12px;">❌</div>
+                <div style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">Falha no Login</div>
+                <div style="font-size: 16px; opacity: 0.95;">Por favor, verifique a senha ou o login e tente novamente.</div>
+            </div>
+            <style>
+            @keyframes slideInUp {
+                from {
+                    opacity: 0;
+                    transform: translateY(-40px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            # Limpar o flag de erro
+            del st.session_state.show_login_error
+            # Limpar flag de login em andamento
+            if 'login_in_progress' in st.session_state:
+                del st.session_state.login_in_progress
+            return
+
+        # NOVA ABORDAGEM: Fazer login primeiro, depois aplicar CSS se necessário
         try:
             user, jwt_token = supabase_agent.login(email, password)
-            if user and jwt_token:
+
+            # Verificar se o login foi bem-sucedido
+            login_successful = user is not None and jwt_token is not None
+
+            if login_successful:
+                # Aplicar CSS de loading APENAS se o login foi bem-sucedido
+                st.markdown("""
+                <style>
+                /* Ocultar todos os elementos da tela de login */
+                .centered-login, .login-title, .login-subtitle, 
+                .stTextInput, .stButton, .footer {
+                    display: none !important;
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Loading personalizado mais bonito
+                with st.spinner(""):
+                    st.markdown("""
+                    <div style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 40px;
+                        text-align: center;
+                        background: rgba(255, 255, 255, 0.95);
+                        border-radius: 15px;
+                        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+                        margin: 20px;
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        z-index: 1000;
+                    ">
+                        <div style="
+                            width: 60px;
+                            height: 60px;
+                            border: 4px solid rgba(28, 175, 154, 0.2);
+                            border-radius: 50%;
+                            border-top-color: #1caf9a;
+                            animation: spin 1s linear infinite;
+                            margin-bottom: 20px;
+                        "></div>
+                        <div style="
+                            font-size: 18px;
+                            font-weight: 600;
+                            color: #35434f;
+                            margin-bottom: 10px;
+                        ">Entrando no sistema...</div>
+                        <div style="
+                            font-size: 14px;
+                            color: #666;
+                        ">Aguarde um momento</div>
+                    </div>
+                    <style>
+                    @keyframes spin {
+                        to { transform: rotate(360deg); }
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+
                 user_id = user.get('id') if isinstance(
                     user, dict) else getattr(user, 'id', None)
                 if not user_id:
                     st.error("Não foi possível obter o ID do usuário.")
+                    # Limpar flag de login em andamento
+                    if 'login_in_progress' in st.session_state:
+                        del st.session_state.login_in_progress
                     return
 
                 # Limpar cache de dados do usuário anterior
                 st.cache_data.clear()
 
+                # Loading para carregamento do classificador
+                with st.spinner(""):
+                    st.markdown("""
+                    <div style="
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 30px;
+                        text-align: center;
+                        background: rgba(255, 255, 255, 0.95);
+                        border-radius: 15px;
+                        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+                        margin: 20px;
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        z-index: 1000;
+                    ">
+                        <div style="
+                            width: 50px;
+                            height: 50px;
+                            border: 3px solid rgba(76, 175, 80, 0.2);
+                            border-radius: 50%;
+                            border-top-color: #4CAF50;
+                            animation: spin 1s linear infinite;
+                            margin-bottom: 15px;
+                        "></div>
+                        <div style="
+                            font-size: 16px;
+                            font-weight: 600;
+                            color: #35434f;
+                            margin-bottom: 8px;
+                        ">Preparando sistema...</div>
+                        <div style="
+                            font-size: 12px;
+                            color: #666;
+                        ">Carregando recursos necessários</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
                 from classificador_agent import carregar_classificador_inpi_json
-                with st.spinner("Carregando Classificador INPI..."):
-                    st.session_state.classificador_inpi = carregar_classificador_inpi_json()
+                st.session_state.classificador_inpi = carregar_classificador_inpi_json()
 
                 perfil = supabase_agent.get_profile(user_id)
                 if perfil:
                     st.session_state.user = perfil  # Sempre um dict!
-                    st.session_state.consultor_nome = perfil.get('name', '')
-                    st.session_state.consultor_email = perfil.get('email', '')
+                    st.session_state.consultor_nome = perfil.get(
+                        'name', '')
+                    st.session_state.consultor_email = perfil.get(
+                        'email', '')
                 else:
                     # Fallback: cria um dict mínimo
                     st.session_state.user = {
@@ -337,12 +495,154 @@ def render_login_screen(supabase_agent):
 
                 st.session_state.jwt_token = jwt_token
 
-                st.success("Login realizado com sucesso!")
+                # Mensagem de sucesso melhorada
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+                    color: white;
+                    padding: 30px;
+                    border-radius: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                    box-shadow: 0 8px 25px rgba(76, 175, 80, 0.4);
+                    animation: slideInUp 0.8s ease-out;
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 1000;
+                    min-width: 300px;
+                    border: 3px solid #45a049;
+                ">
+                    <div style="font-size: 32px; margin-bottom: 15px;">✅</div>
+                    <div style="font-size: 22px; font-weight: 700; margin-bottom: 10px;">Login Realizado com Sucesso!</div>
+                    <div style="font-size: 16px; opacity: 0.95; margin-bottom: 15px;">Bem-vindo ao sistema</div>
+                    <div style="
+                        width: 40px;
+                        height: 4px;
+                        background: rgba(255, 255, 255, 0.3);
+                        border-radius: 2px;
+                        margin: 0 auto;
+                        animation: pulse 2s infinite;
+                    "></div>
+                </div>
+                <style>
+                @keyframes slideInUp {
+                    from {
+                        opacity: 0;
+                        transform: translate(-50%, -60px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translate(-50%, -50%);
+                    }
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 0.3; }
+                    50% { opacity: 1; }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Delay maior para mostrar a mensagem de sucesso
+                import time
+                time.sleep(3.0)  # Aumentado de 1.5 para 3.0 segundos
+                # Limpar flag de login em andamento
+                if 'login_in_progress' in st.session_state:
+                    del st.session_state.login_in_progress
                 st.rerun()
             else:
-                st.error("Login ou senha incorretos. Por favor, tente novamente.")
+                # ERRO: Mostrar erro imediatamente sem aplicar CSS de loading
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+                    color: white;
+                    padding: 25px;
+                    border-radius: 15px;
+                    margin: 20px 0;
+                    text-align: center;
+                    box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+                    animation: slideInUp 0.6s ease-out;
+                    border: 3px solid #d32f2f;
+                    min-width: 300px;
+                    position: relative;
+                    z-index: 1001;
+                ">
+                    <div style="font-size: 28px; margin-bottom: 12px;">❌</div>
+                    <div style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">Falha no Login</div>
+                    <div style="font-size: 16px; opacity: 0.95;">Por favor, verifique a senha ou o login e tente novamente.</div>
+                </div>
+                <style>
+                @keyframes slideInUp {
+                    from {
+                        opacity: 0;
+                        transform: translateY(-40px);
+                    }
+                    to {
+                        opacity: 1;
+                        transform: translateY(0);
+                    }
+                }
+                </style>
+                """, unsafe_allow_html=True)
+
+                # Limpar campos de login em caso de erro
+                if 'login_email' in st.session_state:
+                    del st.session_state.login_email
+                if 'login_password' in st.session_state:
+                    del st.session_state.login_password
+
+                # Limpar flag de login em andamento
+                if 'login_in_progress' in st.session_state:
+                    del st.session_state.login_in_progress
+
+                return  # Retornar sem fazer rerun
         except Exception as e:
-            st.error(f"Erro ao tentar logar: {e}")
+            # ERRO DE SISTEMA: Mostrar erro imediatamente sem aplicar CSS de loading
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+                color: white;
+                padding: 25px;
+                border-radius: 15px;
+                margin: 20px 0;
+                text-align: center;
+                box-shadow: 0 6px 20px rgba(255, 152, 0, 0.4);
+                animation: slideInUp 0.6s ease-out;
+                border: 3px solid #f57c00;
+                min-width: 300px;
+                position: relative;
+                z-index: 1001;
+            ">
+                <div style="font-size: 28px; margin-bottom: 12px;">⚠️</div>
+                <div style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">Erro no Sistema</div>
+                <div style="font-size: 16px; opacity: 0.95;">{str(e)}</div>
+            </div>
+            <style>
+            @keyframes slideInUp {{
+                from {{
+                    opacity: 0;
+                    transform: translateY(-40px);
+                }}
+                to {{
+                    opacity: 1;
+                    transform: translateY(0);
+                }}
+            }}
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Limpar campos de login em caso de erro
+            if 'login_email' in st.session_state:
+                del st.session_state.login_email
+            if 'login_password' in st.session_state:
+                del st.session_state.login_password
+
+            # Limpar flag de login em andamento
+            if 'login_in_progress' in st.session_state:
+                del st.session_state.login_in_progress
+
+            return  # Retornar sem fazer rerun
 
     st.markdown(
         """

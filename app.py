@@ -120,6 +120,7 @@ def main():
 
     # Usar cache para otimizar consultas de permissões
     permissions_data = get_user_permissions_cached(user_id, permission_manager)
+
     user_info = permissions_data['user_info']
     cargo_info = permissions_data['cargo_info']
     available_menu_items = permissions_data['available_menu']
@@ -198,14 +199,29 @@ def main():
             del st.session_state["sucesso"]
 
     elif escolha == "Minhas Buscas":
-        if not permission_manager.check_page_permission(user_id, "Minhas Buscas"):
-            st.error("Você não tem permissão para acessar esta funcionalidade.")
+        # Verificar permissões de forma mais suave para evitar redirecionamentos
+        try:
+            if not permission_manager.check_page_permission(user_id, "Minhas Buscas"):
+                st.warning(
+                    "⚠️ Você não tem permissão para acessar esta funcionalidade.")
+                st.info(
+                    "Entre em contato com o administrador para solicitar acesso.")
+                return
+        except Exception as e:
+            st.warning("⚠️ Erro ao verificar permissões.")
+            st.info("Tente novamente ou entre em contato com o suporte.")
             return
 
         # Determinar se é admin baseado no tipo de usuário
-        cargo_info = permission_manager.get_user_cargo_info(user_id)
-        # Admin de busca: qualquer usuário com is_admin = True
-        is_admin = cargo_info['is_admin'] is True
+        try:
+            cargo_info = permission_manager.get_user_cargo_info(user_id)
+            # Admin de busca: qualquer usuário com is_admin = True
+            is_admin = cargo_info['is_admin'] is True
+        except Exception as e:
+            st.warning("⚠️ Erro ao determinar permissões de administrador.")
+            st.info("Tente novamente ou entre em contato com o suporte.")
+            return
+
         marcas_views.minhas_buscas(busca_manager, is_admin)
 
     elif escolha == "Solicitar Serviço de Patente":

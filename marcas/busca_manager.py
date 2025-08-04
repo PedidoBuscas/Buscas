@@ -7,6 +7,7 @@ from pdf_generator import gerar_pdf_busca
 from ui_components import exibir_especificacoes_card
 
 import unicodedata
+from datetime import datetime
 
 
 def get_user_attr(user, attr, default=None):
@@ -449,17 +450,20 @@ class BuscaManager:
 
     def separar_buscas_por_status(self, buscas: List[Dict[str, Any]]) -> dict:
         """
-        Separa as buscas em listas por status.
-        Retorna um dicionário: {status: [buscas]}
+        Separa as buscas por status em um dicionário.
         """
-        status_dict = {
+        resultado = {
             self.STATUS_PENDENTE: [],
             self.STATUS_RECEBIDA: [],
             self.STATUS_EM_ANALISE: [],
             self.STATUS_CONCLUIDA: []
         }
+
         for busca in buscas:
-            status = self.get_status_atual(busca)
-            if status in status_dict:
-                status_dict[status].append(busca)
-        return status_dict
+            status = busca.get('status_busca', self.STATUS_PENDENTE)
+            if status in resultado:
+                resultado[status].append(busca)
+            else:
+                resultado[self.STATUS_PENDENTE].append(busca)
+
+        return resultado

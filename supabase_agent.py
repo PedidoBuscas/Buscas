@@ -32,12 +32,26 @@ class SupabaseAgent:
         """
         Realiza login no Supabase e retorna o usuário e o JWT token se bem-sucedido.
         """
-        resp = self.client.auth.sign_in_with_password(
-            {"email": email, "password": password})
-        jwt_token = None
-        if hasattr(resp, "session") and resp.session:
-            jwt_token = resp.session.access_token
-        return resp.user if resp.user else None, jwt_token
+        try:
+            resp = self.client.auth.sign_in_with_password(
+                {"email": email, "password": password})
+            jwt_token = None
+            if hasattr(resp, "session") and resp.session:
+                jwt_token = resp.session.access_token
+            return resp.user if resp.user else None, jwt_token
+        except Exception as e:
+            # Capturar erros específicos do Supabase
+            error_message = str(e)
+            if "Invalid login credentials" in error_message:
+                raise Exception("Login ou senha incorretos")
+            elif "Email not confirmed" in error_message:
+                raise Exception(
+                    "Email não confirmado. Verifique sua caixa de entrada.")
+            elif "Too many requests" in error_message:
+                raise Exception(
+                    "Muitas tentativas. Aguarde um momento antes de tentar novamente.")
+            else:
+                raise Exception(f"Erro de conexão: {error_message}")
 
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         try:

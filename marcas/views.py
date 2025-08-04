@@ -242,53 +242,123 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
     # Organizar buscas por status
     buscas_por_status = busca_manager.separar_buscas_por_status(buscas)
 
+    # Inicializar variáveis de session_state necessárias
+    if 'aba_atual' not in st.session_state:
+        st.session_state.aba_atual = 0
+    if 'acessando_relatorio_custos' not in st.session_state:
+        st.session_state.acessando_relatorio_custos = False
+    if 'admin_aba_atual' not in st.session_state:
+        st.session_state.admin_aba_atual = 0
+
+    # Verificar se usuário tem permissão para relatório de custos
+    from permission_manager import CargoPermissionManager
+    from supabase_agent import SupabaseAgent
+
+    supabase_agent = SupabaseAgent()
+    permission_manager = CargoPermissionManager(supabase_agent)
+
+    # Verificação mais robusta de permissões
+    try:
+        tem_permissao_custos = permission_manager.check_page_permission(
+            user_id, "Relatório de Custos")
+    except Exception as e:
+        # Se houver erro na verificação, permitir acesso para evitar redirecionamento
+        st.warning("⚠️ Erro ao verificar permissões de relatório.")
+        st.info("💡 Tentando carregar relatório...")
+        tem_permissao_custos = True  # Permitir acesso para evitar redirecionamento
+
     if is_admin:
+        # Usar lógica FIXA como os consultores para evitar problemas de redirecionamento
+        pendentes = buscas_por_status[busca_manager.STATUS_PENDENTE]
+        recebidas = buscas_por_status[busca_manager.STATUS_RECEBIDA]
+        em_analise = buscas_por_status[busca_manager.STATUS_EM_ANALISE]
+        concluidas = buscas_por_status[busca_manager.STATUS_CONCLUIDA]
+
+        # Criar abas em ordem FIXA
         abas = []
         labels = []
-        status_keys = [
-            (busca_manager.STATUS_PENDENTE, "Pendentes"),
-            (busca_manager.STATUS_RECEBIDA, "Recebidas"),
-            (busca_manager.STATUS_EM_ANALISE, "Em Análise"),
-            (busca_manager.STATUS_CONCLUIDA, "Concluídas")
-        ]
-        for status, label in status_keys:
-            buscas_status = buscas_por_status[status]
-            if buscas_status:
-                labels.append(label)
-                abas.append(buscas_status)
-        if not abas:
+
+        # Sempre criar todas as abas em ordem fixa
+        labels.append("Pendentes")
+        abas.append(pendentes)
+        labels.append("Recebidas")
+        abas.append(recebidas)
+        labels.append("Em Análise")
+        abas.append(em_analise)
+        labels.append("Concluídas")
+        abas.append(concluidas)
+
+        # Adicionar aba de relatório de custos se tiver permissão
+        if tem_permissao_custos:
+            labels.append("📊 Relatório de Custos")
+            abas.append([])  # Lista vazia para a aba de custos
+
+        if not any(abas):  # Se todas as abas estão vazias
             st.info("Nenhuma busca realizada ainda.")
             return
+
+        # Usar tabs sem key (st.tabs não aceita key)
         tabs = st.tabs(labels)
+
+        # Detectar qual aba está ativa e manter estado
         for i, tab in enumerate(tabs):
             with tab:
-                if labels[i] == "Concluídas":
+                # Manter estado da aba ativa
+                if 'aba_atual' not in st.session_state:
+                    st.session_state.aba_atual = i
+
+                if labels[i] == "📊 Relatório de Custos":
+                    # Marcar que está acessando o relatório de custos
+                    st.session_state.acessando_relatorio_custos = True
+                    st.session_state.aba_atual = i
+                    st.session_state.admin_aba_atual = i
+
+                    # Exibir relatório de custos
+                    from marcas.relatorio_custos import relatorio_custos
+                    try:
+                        relatorio_custos(busca_manager, is_admin, user_id)
+                    except Exception as e:
+                        st.error(
+                            f"❌ Erro ao carregar relatório de custos: {e}")
+                        st.info(
+                            "💡 Tente novamente ou entre em contato com o suporte.")
+                        st.info(
+                            "🔄 Se o problema persistir, tente recarregar a página.")
+                elif labels[i] == "Concluídas":
                     # Organizar por mês primeiro, depois por consultor (apenas para Concluídas)
                     buscas_concluidas = abas[i]
-                    buscas_por_mes = organizar_buscas_por_mes(
-                        buscas_concluidas)
+                    if buscas_concluidas:
+                        buscas_por_mes = organizar_buscas_por_mes(
+                            buscas_concluidas)
 
-                    for mes_ano, buscas_do_mes in buscas_por_mes.items():
-                        with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
-                            # Agrupar por consultor dentro do mês
-                            buscas_por_consultor = defaultdict(list)
-                            for busca in buscas_do_mes:
-                                nome = busca.get(
-                                    'nome_consultor', 'Sem Consultor')
-                                buscas_por_consultor[nome].append(busca)
+                        for mes_ano, buscas_do_mes in buscas_por_mes.items():
+                            with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
+                                # Agrupar por consultor dentro do mês
+                                buscas_por_consultor = defaultdict(list)
+                                for busca in buscas_do_mes:
+                                    nome = busca.get(
+                                        'nome_consultor', 'Sem Consultor')
+                                    buscas_por_consultor[nome].append(busca)
 
-                            # Ordenar consultores alfabeticamente
-                            for consultor in sorted(buscas_por_consultor.keys()):
-                                buscas_do_consultor = buscas_por_consultor[consultor]
-                                with st.expander(f"👤 {consultor} ({len(buscas_do_consultor)})"):
-                                    for busca in buscas_do_consultor:
-                                        busca_manager.renderizar_busca(
-                                            busca, is_admin, todas_buscas=todas_buscas_fila)
+                                # Ordenar consultores alfabeticamente
+                                for consultor in sorted(buscas_por_consultor.keys()):
+                                    buscas_do_consultor = buscas_por_consultor[consultor]
+                                    with st.expander(f"👤 {consultor} ({len(buscas_do_consultor)})"):
+                                        for busca in buscas_do_consultor:
+                                            busca_manager.renderizar_busca(
+                                                busca, is_admin, todas_buscas=todas_buscas_fila)
+                    else:
+                        st.info("Nenhuma busca concluída ainda.")
                 else:
-                    # Para outros status, manter organização normal (sem divisão por mês)
-                    for busca in abas[i]:
-                        busca_manager.renderizar_busca(
-                            busca, is_admin, todas_buscas=todas_buscas_fila)
+                    # Para outros status, manter organização normal
+                    buscas_status = abas[i]
+                    if buscas_status:
+                        for busca in buscas_status:
+                            busca_manager.renderizar_busca(
+                                busca, is_admin, todas_buscas=todas_buscas_fila)
+                    else:
+                        st.info(f"Nenhuma busca {labels[i].lower()} ainda.")
+
     else:
         enviadas = buscas_por_status[busca_manager.STATUS_PENDENTE] + \
             buscas_por_status[busca_manager.STATUS_RECEBIDA] + \
@@ -302,23 +372,56 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
         if concluidas:
             labels.append("Concluídas")
             abas.append(concluidas)
+
+        # Adicionar aba de relatório de custos se tiver permissão
+        if tem_permissao_custos:
+            labels.append("📊 Relatório de Custos")
+            abas.append([])  # Lista vazia para a aba de custos
+
         if not abas:
             st.info("Nenhuma busca realizada ainda.")
             return
+
+        # Usar tabs sem key (st.tabs não aceita key)
         tabs = st.tabs(labels)
+
+        # Detectar qual aba está ativa e manter estado
         for i, tab in enumerate(tabs):
             with tab:
-                if labels[i] == "Concluídas":
+                # Manter estado da aba ativa
+                if 'aba_atual' not in st.session_state:
+                    st.session_state.aba_atual = i
+
+                if labels[i] == "📊 Relatório de Custos":
+                    # Marcar que está acessando o relatório de custos
+                    st.session_state.acessando_relatorio_custos = True
+                    st.session_state.aba_atual = i
+
+                    # Exibir relatório de custos
+                    from marcas.relatorio_custos import relatorio_custos
+                    try:
+                        relatorio_custos(busca_manager, is_admin, user_id)
+                    except Exception as e:
+                        st.error(
+                            f"❌ Erro ao carregar relatório de custos: {e}")
+                        st.info(
+                            "💡 Tente novamente ou entre em contato com o suporte.")
+                        st.info(
+                            "🔄 Se o problema persistir, tente recarregar a página.")
+                elif labels[i] == "Concluídas":
                     # Organizar por mês apenas para Concluídas (usuários não-admin)
                     buscas_concluidas = abas[i]
-                    buscas_por_mes = organizar_buscas_por_mes(
-                        buscas_concluidas)
+                    if buscas_concluidas:
+                        buscas_por_mes = organizar_buscas_por_mes(
+                            buscas_concluidas)
 
-                    for mes_ano, buscas_do_mes in buscas_por_mes.items():
-                        with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
-                            for busca in buscas_do_mes:
-                                busca_manager.renderizar_busca(
-                                    busca, is_admin, todas_buscas=todas_buscas_fila)
+                        for mes_ano, buscas_do_mes in buscas_por_mes.items():
+                            with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
+                                for busca in buscas_do_mes:
+                                    busca_manager.renderizar_busca(
+                                        busca, is_admin, todas_buscas=todas_buscas_fila)
+                    else:
+                        st.info("Nenhuma busca concluída ainda.")
                 else:
                     # Para outros status, manter organização normal
                     for busca in abas[i]:
