@@ -38,17 +38,6 @@ def formatar_mes_ano(data_str):
         if not data_str:
             return "Data não disponível"
 
-        # Remover 'Z' e adicionar timezone se necessário
-        if data_str.endswith('Z'):
-            data_str = data_str.replace('Z', '+00:00')
-
-        # Tentar diferentes formatos de data
-        try:
-            data = datetime.fromisoformat(data_str)
-        except ValueError:
-            # Tentar formato ISO sem timezone
-            data = datetime.fromisoformat(data_str.replace('Z', ''))
-
         # Mapeamento de meses em português
         meses_pt = {
             'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março',
@@ -57,12 +46,47 @@ def formatar_mes_ano(data_str):
             'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'
         }
 
-        mes_ano_en = data.strftime("%B/%Y")
-        mes_en, ano = mes_ano_en.split('/')
-        mes_pt = meses_pt.get(mes_en, mes_en)
+        data = None
 
-        return f"{mes_pt}/{ano}"
+        # Tentar diferentes formatos de data
+        try:
+            # Formato ISO com timezone
+            if data_str.endswith('Z'):
+                data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
+            else:
+                # Formato ISO sem timezone
+                data = datetime.fromisoformat(data_str)
+        except ValueError:
+            try:
+                # Formato ISO sem timezone (removendo Z se existir)
+                data = datetime.fromisoformat(data_str.replace('Z', ''))
+            except ValueError:
+                try:
+                    # Formato brasileiro DD/MM/YYYY
+                    if '/' in data_str and len(data_str.split('/')) == 3:
+                        dia, mes, ano = data_str.split('/')
+                        data = datetime(int(ano), int(mes), int(dia))
+                    else:
+                        # Tentar outros formatos comuns
+                        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S']:
+                            try:
+                                data = datetime.strptime(data_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                except:
+                    pass
+
+        if data:
+            mes_ano_en = data.strftime("%B/%Y")
+            mes_en, ano = mes_ano_en.split('/')
+            mes_pt = meses_pt.get(mes_en, mes_en)
+            return f"{mes_pt}/{ano}"
+        else:
+            return "Data não disponível"
+
     except Exception as e:
+        print(f"Erro ao formatar data '{data_str}': {e}")
         return "Data não disponível"
 
 
