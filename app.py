@@ -19,26 +19,55 @@ def get_user_id(user):
     return getattr(user, 'id', None)
 
 
+@st.cache_resource
+def get_supabase_agent():
+    """Cache do SupabaseAgent para evitar recriação"""
+    return SupabaseAgent()
+
+
+@st.cache_resource
+def get_email_agent(_config):
+    """Cache do EmailAgent para evitar recriação"""
+    return EmailAgent(
+        _config["smtp_host"],
+        _config["smtp_port"],
+        _config["smtp_user"],
+        _config["smtp_pass"],
+        _config["destinatarios"],
+        _config["destinatario_juridico"],
+        _config["destinatario_juridico_um"]
+    )
+
+
+@st.cache_resource
+def get_busca_manager(_supabase_agent, _email_agent):
+    """Cache do BuscaManager para evitar recriação"""
+    return BuscaManager(_supabase_agent, _email_agent)
+
+
+@st.cache_resource
+def get_form_agent():
+    """Cache do FormAgent para evitar recriação"""
+    return FormAgent()
+
+
+@st.cache_resource
+def get_permission_manager(_supabase_agent):
+    """Cache do PermissionManager para evitar recriação"""
+    return CargoPermissionManager(_supabase_agent)
+
+
 def main():
     config = carregar_configuracoes()
     configurar_logging()
     apply_global_styles()
 
-    supabase_agent = SupabaseAgent()
-    email_agent = EmailAgent(
-        config["smtp_host"],
-        config["smtp_port"],
-        config["smtp_user"],
-        config["smtp_pass"],
-        config["destinatarios"],
-        config["destinatario_juridico"],
-        config["destinatario_juridico_um"]
-    )
-    busca_manager = BuscaManager(supabase_agent, email_agent)
-    form_agent = FormAgent()
-
-    # Inicializar o gerenciador de permissões
-    permission_manager = CargoPermissionManager(supabase_agent)
+    # Usar cache para otimizar criação de agentes
+    supabase_agent = get_supabase_agent()
+    email_agent = get_email_agent(config)
+    busca_manager = get_busca_manager(supabase_agent, email_agent)
+    form_agent = get_form_agent()
+    permission_manager = get_permission_manager(supabase_agent)
 
     # Inicializar supabase_agent e email_agent no session_state
     if "supabase_agent" not in st.session_state:
@@ -76,14 +105,25 @@ def main():
 
     # Obter informações do usuário
     user_id = get_user_id(st.session_state.user)
-    user_info = permission_manager.get_user_display_info(user_id)
 
-    # Obter informações do usuário
-    cargo_info = permission_manager.get_user_cargo_info(user_id)
+    # Cache de permissões para otimizar consultas repetidas
+    @st.cache_data(ttl=300)  # 5 minutos
+    def get_user_permissions_cached(_user_id, _permission_manager):
+        return {
+            'user_info': _permission_manager.get_user_display_info(_user_id),
+            'cargo_info': _permission_manager.get_user_cargo_info(_user_id),
+            'available_menu': _permission_manager.get_available_menu_items(_user_id),
+            'menu_icons': _permission_manager.get_icons_for_menu(
+                _permission_manager.get_available_menu_items(_user_id)
+            )
+        }
 
-    # Filtrar menu baseado em permissões
-    available_menu_items = permission_manager.get_available_menu_items(user_id)
-    menu_icons = permission_manager.get_icons_for_menu(available_menu_items)
+    # Usar cache para otimizar consultas de permissões
+    permissions_data = get_user_permissions_cached(user_id, permission_manager)
+    user_info = permissions_data['user_info']
+    cargo_info = permissions_data['cargo_info']
+    available_menu_items = permissions_data['available_menu']
+    menu_icons = permissions_data['menu_icons']
 
     with st.sidebar:
         # Adicionar logo e informações do usuário

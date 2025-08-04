@@ -1,0 +1,123 @@
+[1mdiff --git a/marcas/views.py b/marcas/views.py[m
+[1mindex 023c1c2..860a1d5 100644[m
+[1m--- a/marcas/views.py[m
+[1m+++ b/marcas/views.py[m
+[36m@@ -2,6 +2,7 @@[m [mfrom marcas.busca_manager import get_user_attr[m
+ import streamlit as st[m
+ from datetime import datetime[m
+ from collections import defaultdict[m
+[32m+[m
+ MODULO_INFO = {[m
+     "nome": "Marcas",[m
+     "emoji": "🏷️",[m
+[36m@@ -32,47 +33,10 @@[m [mdef solicitar_busca(form_agent, busca_manager):[m
+                 st.rerun()[m
+ [m
+ [m
+[31m-def formatar_mes_ano_fallback(data_str):[m
+[31m-    """Função de fallback mais robusta para formatação de data"""[m
+[31m-    try:[m
+[31m-        if not data_str:[m
+[31m-            return "Data não disponível"[m
+[31m-[m
+[31m-        # Se já é uma string de mês/ano, retornar diretamente[m
+[31m-        if '/' in data_str and len(data_str.split('/')) == 2:[m
+[31m-            return data_str[m
+[31m-[m
+[31m-        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone[m
+[31m-        if isinstance(data_str, str):[m
+[31m-            # Remover timezone e hora se existir[m
+[31m-            data_limpa = data_str.split([m
+[31m-                'T')[0] if 'T' in data_str else data_str[m
+[31m-            data_limpa = data_limpa.split([m
+[31m-                ' ')[0] if ' ' in data_limpa else data_limpa[m
+[31m-[m
+[31m-            # Verificar se é formato YYYY-MM-DD[m
+[31m-            if len(data_limpa.split('-')) == 3:[m
+[31m-                ano, mes, dia = data_limpa.split('-')[m
+[31m-                try:[m
+[31m-                    mes_int = int(mes)[m
+[31m-                    ano_int = int(ano)[m
+[31m-[m
+[31m-                    # Mapeamento direto de meses[m
+[31m-                    meses = {[m
+[31m-                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',[m
+[31m-                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',[m
+[31m-                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'[m
+[31m-                    }[m
+[31m-[m
+[31m-                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')[m
+[31m-                    return f"{mes_nome}/{ano_int}"[m
+[31m-                except:[m
+[31m-                    pass[m
+[31m-[m
+[31m-        return "Data não disponível"[m
+[31m-    except Exception as e:[m
+[31m-        print(f"DEBUG: Erro no fallback: {e}")[m
+[31m-        return "Data não disponível"[m
+[32m+[m[32m@st.cache_data(ttl=60)  # 1 minuto[m
+[32m+[m[32mdef formatar_mes_ano_cached(data_str: str) -> str:[m
+[32m+[m[32m    """Cache para formatação de datas para otimizar performance"""[m
+[32m+[m[32m    return formatar_mes_ano_fallback(data_str)[m
+ [m
+ [m
+ def formatar_mes_ano(data_str):[m
+[36m@@ -148,6 +112,49 @@[m [mdef formatar_mes_ano(data_str):[m
+         return formatar_mes_ano_fallback(data_str)[m
+ [m
+ [m
+[32m+[m[32mdef formatar_mes_ano_fallback(data_str):[m
+[32m+[m[32m    """Função de fallback mais robusta para formatação de data"""[m
+[32m+[m[32m    try:[m
+[32m+[m[32m        if not data_str:[m
+[32m+[m[32m            return "Data não disponível"[m
+[32m+[m
+[32m+[m[32m        # Se já é uma string de mês/ano, retornar diretamente[m
+[32m+[m[32m        if '/' in data_str and len(data_str.split('/')) == 2:[m
+[32m+[m[32m            return data_str[m
+[32m+[m
+[32m+[m[32m        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone[m
+[32m+[m[32m        if isinstance(data_str, str):[m
+[32m+[m[32m            # Remover timezone e hora se existir[m
+[32m+[m[32m            data_limpa = data_str.split([m
+[32m+[m[32m                'T')[0] if 'T' in data_str else data_str[m
+[32m+[m[32m            data_limpa = data_limpa.split([m
+[32m+[m[32m                ' ')[0] if ' ' in data_limpa else data_limpa[m
+[32m+[m
+[32m+[m[32m            # Verificar se é formato YYYY-MM-DD[m
+[32m+[m[32m            if len(data_limpa.split('-')) == 3:[m
+[32m+[m[32m                ano, mes, dia = data_limpa.split('-')[m
+[32m+[m[32m                try:[m
+[32m+[m[32m                    mes_int = int(mes)[m
+[32m+[m[32m                    ano_int = int(ano)[m
+[32m+[m
+[32m+[m[32m                    # Mapeamento direto de meses[m
+[32m+[m[32m                    meses = {[m
+[32m+[m[32m                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',[m
+[32m+[m[32m                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',[m
+[32m+[m[32m                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'[m
+[32m+[m[32m                    }[m
+[32m+[m
+[32m+[m[32m                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')[m
+[32m+[m[32m                    return f"{mes_nome}/{ano_int}"[m
+[32m+[m[32m                except:[m
+[32m+[m[32m                    pass[m
+[32m+[m
+[32m+[m[32m        return "Data não disponível"[m
+[32m+[m[32m    except Exception as e:[m
+[32m+[m[32m        print(f"DEBUG: Erro no fallback: {e}")[m
+[32m+[m[32m        return "Data não disponível"[m
+[32m+[m
+[32m+[m
+ def organizar_buscas_por_mes(buscas):[m
+     """Organiza as buscas por mês/ano de criação"""[m
+     buscas_por_mes = defaultdict(list)[m
+[36m@@ -155,7 +162,7 @@[m [mdef organizar_buscas_por_mes(buscas):[m
+     for busca in buscas:[m
+         data_criacao = busca.get('created_at')[m
+         if data_criacao:[m
+[31m-            mes_ano = formatar_mes_ano(data_criacao)[m
+[32m+[m[32m            mes_ano = formatar_mes_ano_cached(data_criacao)[m
+             buscas_por_mes[mes_ano].append(busca)[m
+         else:[m
+             buscas_por_mes["Data não disponível"].append(busca)[m

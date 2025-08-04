@@ -2,6 +2,7 @@ from marcas.busca_manager import get_user_attr
 import streamlit as st
 from datetime import datetime
 from collections import defaultdict
+
 MODULO_INFO = {
     "nome": "Marcas",
     "emoji": "🏷️",
@@ -32,47 +33,10 @@ def solicitar_busca(form_agent, busca_manager):
                 st.rerun()
 
 
-def formatar_mes_ano_fallback(data_str):
-    """Função de fallback mais robusta para formatação de data"""
-    try:
-        if not data_str:
-            return "Data não disponível"
-
-        # Se já é uma string de mês/ano, retornar diretamente
-        if '/' in data_str and len(data_str.split('/')) == 2:
-            return data_str
-
-        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone
-        if isinstance(data_str, str):
-            # Remover timezone e hora se existir
-            data_limpa = data_str.split(
-                'T')[0] if 'T' in data_str else data_str
-            data_limpa = data_limpa.split(
-                ' ')[0] if ' ' in data_limpa else data_limpa
-
-            # Verificar se é formato YYYY-MM-DD
-            if len(data_limpa.split('-')) == 3:
-                ano, mes, dia = data_limpa.split('-')
-                try:
-                    mes_int = int(mes)
-                    ano_int = int(ano)
-
-                    # Mapeamento direto de meses
-                    meses = {
-                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
-                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
-                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
-                    }
-
-                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')
-                    return f"{mes_nome}/{ano_int}"
-                except:
-                    pass
-
-        return "Data não disponível"
-    except Exception as e:
-        print(f"DEBUG: Erro no fallback: {e}")
-        return "Data não disponível"
+@st.cache_data(ttl=60)  # 1 minuto
+def formatar_mes_ano_cached(data_str: str) -> str:
+    """Cache para formatação de datas para otimizar performance"""
+    return formatar_mes_ano_fallback(data_str)
 
 
 def formatar_mes_ano(data_str):
@@ -148,6 +112,49 @@ def formatar_mes_ano(data_str):
         return formatar_mes_ano_fallback(data_str)
 
 
+def formatar_mes_ano_fallback(data_str):
+    """Função de fallback mais robusta para formatação de data"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Se já é uma string de mês/ano, retornar diretamente
+        if '/' in data_str and len(data_str.split('/')) == 2:
+            return data_str
+
+        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone
+        if isinstance(data_str, str):
+            # Remover timezone e hora se existir
+            data_limpa = data_str.split(
+                'T')[0] if 'T' in data_str else data_str
+            data_limpa = data_limpa.split(
+                ' ')[0] if ' ' in data_limpa else data_limpa
+
+            # Verificar se é formato YYYY-MM-DD
+            if len(data_limpa.split('-')) == 3:
+                ano, mes, dia = data_limpa.split('-')
+                try:
+                    mes_int = int(mes)
+                    ano_int = int(ano)
+
+                    # Mapeamento direto de meses
+                    meses = {
+                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
+                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
+                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+                    }
+
+                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')
+                    return f"{mes_nome}/{ano_int}"
+                except:
+                    pass
+
+        return "Data não disponível"
+    except Exception as e:
+        print(f"DEBUG: Erro no fallback: {e}")
+        return "Data não disponível"
+
+
 def organizar_buscas_por_mes(buscas):
     """Organiza as buscas por mês/ano de criação"""
     buscas_por_mes = defaultdict(list)
@@ -155,7 +162,7 @@ def organizar_buscas_por_mes(buscas):
     for busca in buscas:
         data_criacao = busca.get('created_at')
         if data_criacao:
-            mes_ano = formatar_mes_ano(data_criacao)
+            mes_ano = formatar_mes_ano_cached(data_criacao)
             buscas_por_mes[mes_ano].append(busca)
         else:
             buscas_por_mes["Data não disponível"].append(busca)
