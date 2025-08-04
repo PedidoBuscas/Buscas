@@ -85,7 +85,7 @@ def formatar_mes_ano(data_str):
                         print(f"DEBUG: Parseado como formato brasileiro")
                     else:
                         # Tentar outros formatos comuns
-                        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S']:
+                        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
                             try:
                                 data = datetime.strptime(data_str, fmt)
                                 print(f"DEBUG: Parseado com formato: {fmt}")
@@ -129,6 +129,10 @@ def formatar_mes_ano_fallback(data_str):
                 'T')[0] if 'T' in data_str else data_str
             data_limpa = data_limpa.split(
                 ' ')[0] if ' ' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                '+')[0] if '+' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                'Z')[0] if 'Z' in data_limpa else data_limpa
 
             # Verificar se é formato YYYY-MM-DD
             if len(data_limpa.split('-')) == 3:

@@ -107,10 +107,11 @@ class RelatorioCustos:
 
             # Extrair mês/ano da data da busca
             try:
-                data_busca = datetime.fromisoformat(
-                    busca.get('created_at', '').replace('Z', '+00:00'))
-                mes_ano = f"{data_busca.month:02d}/{data_busca.year}"
-            except:
+                # Usar a mesma lógica robusta de formatação de data
+                from marcas.views import formatar_mes_ano_cached
+                mes_ano = formatar_mes_ano_cached(busca.get('created_at', ''))
+            except Exception as e:
+                print(f"Erro ao formatar data: {e}")
                 mes_ano = "Data não disponível"
 
             if consultor not in custos_por_consultor_mes:
@@ -297,11 +298,18 @@ class RelatorioCustos:
                                 df_data = []
                                 for busca in dados_mes['buscas']:
                                     try:
+                                        # Usar a mesma lógica robusta de formatação de data
+                                        from marcas.views import formatar_mes_ano_cached
+
+                                        # Tentar formatar a data completa primeiro
                                         data_busca = datetime.fromisoformat(
                                             busca['data'].replace('Z', '+00:00'))
                                         data_formatada = data_busca.strftime(
                                             '%d/%m/%Y %H:%M')
-                                    except:
+                                    except Exception as e:
+                                        print(
+                                            f"Erro ao formatar data para exibição: {e}")
+                                        # Se falhar, usar a data original
                                         data_formatada = busca['data']
 
                                     df_data.append({
