@@ -32,11 +32,58 @@ def solicitar_busca(form_agent, busca_manager):
                 st.rerun()
 
 
+def formatar_mes_ano_fallback(data_str):
+    """Função de fallback mais robusta para formatação de data"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Se já é uma string de mês/ano, retornar diretamente
+        if '/' in data_str and len(data_str.split('/')) == 2:
+            return data_str
+
+        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone
+        if isinstance(data_str, str):
+            # Remover timezone e hora se existir
+            data_limpa = data_str.split(
+                'T')[0] if 'T' in data_str else data_str
+            data_limpa = data_limpa.split(
+                ' ')[0] if ' ' in data_limpa else data_limpa
+
+            # Verificar se é formato YYYY-MM-DD
+            if len(data_limpa.split('-')) == 3:
+                ano, mes, dia = data_limpa.split('-')
+                try:
+                    mes_int = int(mes)
+                    ano_int = int(ano)
+
+                    # Mapeamento direto de meses
+                    meses = {
+                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
+                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
+                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+                    }
+
+                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')
+                    return f"{mes_nome}/{ano_int}"
+                except:
+                    pass
+
+        return "Data não disponível"
+    except Exception as e:
+        print(f"DEBUG: Erro no fallback: {e}")
+        return "Data não disponível"
+
+
 def formatar_mes_ano(data_str):
     """Formata a data para exibição de mês/ano"""
     try:
         if not data_str:
+            print(f"DEBUG: Data vazia ou None")
             return "Data não disponível"
+
+        print(
+            f"DEBUG: Tentando formatar data: '{data_str}' (tipo: {type(data_str)})")
 
         # Mapeamento de meses em português
         meses_pt = {
@@ -53,41 +100,52 @@ def formatar_mes_ano(data_str):
             # Formato ISO com timezone
             if data_str.endswith('Z'):
                 data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
+                print(f"DEBUG: Parseado como ISO com timezone")
             else:
                 # Formato ISO sem timezone
                 data = datetime.fromisoformat(data_str)
-        except ValueError:
+                print(f"DEBUG: Parseado como ISO sem timezone")
+        except ValueError as e1:
+            print(f"DEBUG: Erro ISO: {e1}")
             try:
                 # Formato ISO sem timezone (removendo Z se existir)
                 data = datetime.fromisoformat(data_str.replace('Z', ''))
-            except ValueError:
+                print(f"DEBUG: Parseado como ISO sem Z")
+            except ValueError as e2:
+                print(f"DEBUG: Erro ISO sem Z: {e2}")
                 try:
                     # Formato brasileiro DD/MM/YYYY
                     if '/' in data_str and len(data_str.split('/')) == 3:
                         dia, mes, ano = data_str.split('/')
                         data = datetime(int(ano), int(mes), int(dia))
+                        print(f"DEBUG: Parseado como formato brasileiro")
                     else:
                         # Tentar outros formatos comuns
                         for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S']:
                             try:
                                 data = datetime.strptime(data_str, fmt)
+                                print(f"DEBUG: Parseado com formato: {fmt}")
                                 break
                             except ValueError:
                                 continue
-                except:
+                except Exception as e3:
+                    print(f"DEBUG: Erro formato brasileiro: {e3}")
                     pass
 
         if data:
             mes_ano_en = data.strftime("%B/%Y")
             mes_en, ano = mes_ano_en.split('/')
             mes_pt = meses_pt.get(mes_en, mes_en)
-            return f"{mes_pt}/{ano}"
+            resultado = f"{mes_pt}/{ano}"
+            print(f"DEBUG: Resultado final: {resultado}")
+            return resultado
         else:
-            return "Data não disponível"
+            print(f"DEBUG: Não foi possível parsear a data, tentando fallback")
+            return formatar_mes_ano_fallback(data_str)
 
     except Exception as e:
-        print(f"Erro ao formatar data '{data_str}': {e}")
-        return "Data não disponível"
+        print(f"DEBUG: Erro geral ao formatar data '{data_str}': {e}")
+        return formatar_mes_ano_fallback(data_str)
 
 
 def organizar_buscas_por_mes(buscas):
