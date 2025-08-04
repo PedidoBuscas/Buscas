@@ -1,5 +1,7 @@
 from marcas.busca_manager import get_user_attr
 import streamlit as st
+from datetime import datetime
+from collections import defaultdict
 MODULO_INFO = {
     "nome": "Marcas",
     "emoji": "🏷️",
@@ -28,6 +30,71 @@ def solicitar_busca(form_agent, busca_manager):
             # Enviar busca usando o manager
             if busca_manager.enviar_busca(form_data):
                 st.rerun()
+
+
+def formatar_mes_ano(data_str):
+    """Formata a data para exibição de mês/ano"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Remover 'Z' e adicionar timezone se necessário
+        if data_str.endswith('Z'):
+            data_str = data_str.replace('Z', '+00:00')
+
+        # Tentar diferentes formatos de data
+        try:
+            data = datetime.fromisoformat(data_str)
+        except ValueError:
+            # Tentar formato ISO sem timezone
+            data = datetime.fromisoformat(data_str.replace('Z', ''))
+
+        # Mapeamento de meses em português
+        meses_pt = {
+            'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março',
+            'April': 'Abril', 'May': 'Maio', 'June': 'Junho',
+            'July': 'Julho', 'August': 'Agosto', 'September': 'Setembro',
+            'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'
+        }
+
+        mes_ano_en = data.strftime("%B/%Y")
+        mes_en, ano = mes_ano_en.split('/')
+        mes_pt = meses_pt.get(mes_en, mes_en)
+
+        return f"{mes_pt}/{ano}"
+    except Exception as e:
+        return "Data não disponível"
+
+
+def organizar_buscas_por_mes(buscas):
+    """Organiza as buscas por mês/ano de criação"""
+    buscas_por_mes = defaultdict(list)
+
+    for busca in buscas:
+        data_criacao = busca.get('created_at')
+        if data_criacao:
+            mes_ano = formatar_mes_ano(data_criacao)
+            buscas_por_mes[mes_ano].append(busca)
+        else:
+            buscas_por_mes["Data não disponível"].append(busca)
+
+    # Ordenar por data (mais recente primeiro)
+    def ordenar_mes_ano(mes_ano):
+        if mes_ano == "Data não disponível":
+            return "0000-00"
+        try:
+            # Converter "Janeiro/2024" para "2024-01" para ordenação
+            mes, ano = mes_ano.split('/')
+            meses = {
+                'Janeiro': '01', 'Fevereiro': '02', 'Março': '03', 'Abril': '04',
+                'Maio': '05', 'Junho': '06', 'Julho': '07', 'Agosto': '08',
+                'Setembro': '09', 'Outubro': '10', 'Novembro': '11', 'Dezembro': '12'
+            }
+            return f"{ano}-{meses.get(mes, '00')}"
+        except:
+            return "0000-00"
+
+    return dict(sorted(buscas_por_mes.items(), key=lambda x: ordenar_mes_ano(x[0]), reverse=True))
 
 
 def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
@@ -107,18 +174,29 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
         for i, tab in enumerate(tabs):
             with tab:
                 if labels[i] == "Concluídas":
-                    # Agrupar por consultor
-                    from collections import defaultdict
-                    buscas_por_consultor = defaultdict(list)
-                    for busca in abas[i]:
-                        nome = busca.get('nome_consultor', 'Sem Consultor')
-                        buscas_por_consultor[nome].append(busca)
-                    for consultor, buscas_do_consultor in buscas_por_consultor.items():
-                        with st.expander(f"Consultor: {consultor} ({len(buscas_do_consultor)})"):
-                            for busca in buscas_do_consultor:
-                                busca_manager.renderizar_busca(
-                                    busca, is_admin, todas_buscas=todas_buscas_fila)
+                    # Organizar por mês primeiro, depois por consultor (apenas para Concluídas)
+                    buscas_concluidas = abas[i]
+                    buscas_por_mes = organizar_buscas_por_mes(
+                        buscas_concluidas)
+
+                    for mes_ano, buscas_do_mes in buscas_por_mes.items():
+                        with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
+                            # Agrupar por consultor dentro do mês
+                            buscas_por_consultor = defaultdict(list)
+                            for busca in buscas_do_mes:
+                                nome = busca.get(
+                                    'nome_consultor', 'Sem Consultor')
+                                buscas_por_consultor[nome].append(busca)
+
+                            # Ordenar consultores alfabeticamente
+                            for consultor in sorted(buscas_por_consultor.keys()):
+                                buscas_do_consultor = buscas_por_consultor[consultor]
+                                with st.expander(f"👤 {consultor} ({len(buscas_do_consultor)})"):
+                                    for busca in buscas_do_consultor:
+                                        busca_manager.renderizar_busca(
+                                            busca, is_admin, todas_buscas=todas_buscas_fila)
                 else:
+                    # Para outros status, manter organização normal (sem divisão por mês)
                     for busca in abas[i]:
                         busca_manager.renderizar_busca(
                             busca, is_admin, todas_buscas=todas_buscas_fila)
@@ -141,6 +219,19 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
         tabs = st.tabs(labels)
         for i, tab in enumerate(tabs):
             with tab:
-                for busca in abas[i]:
-                    busca_manager.renderizar_busca(
-                        busca, is_admin, todas_buscas=todas_buscas_fila)
+                if labels[i] == "Concluídas":
+                    # Organizar por mês apenas para Concluídas (usuários não-admin)
+                    buscas_concluidas = abas[i]
+                    buscas_por_mes = organizar_buscas_por_mes(
+                        buscas_concluidas)
+
+                    for mes_ano, buscas_do_mes in buscas_por_mes.items():
+                        with st.expander(f"📅 {mes_ano} ({len(buscas_do_mes)} buscas)"):
+                            for busca in buscas_do_mes:
+                                busca_manager.renderizar_busca(
+                                    busca, is_admin, todas_buscas=todas_buscas_fila)
+                else:
+                    # Para outros status, manter organização normal
+                    for busca in abas[i]:
+                        busca_manager.renderizar_busca(
+                            busca, is_admin, todas_buscas=todas_buscas_fila)

@@ -418,7 +418,7 @@ class BuscaManager:
                 f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {self.get_status_icon(status_atual)} {self.get_status_display(status_atual)}</div>", unsafe_allow_html=True)
 
     def ordenar_buscas_prioridade(self, buscas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Ordena buscas: Em Análise primeiro, depois Recebida, depois Pendente; dentro de cada status, Paga antes de Cortesia, depois por data."""
+        """Ordena buscas: Em Análise primeiro, depois Recebida, depois Pendente; dentro de cada status, por ordem de chegada (created_at)."""
         def prioridade_busca(b):
             status = self.get_status_atual(b)
             # Menor valor = maior prioridade
@@ -428,10 +428,11 @@ class BuscaManager:
                 prioridade_status = 1
             else:  # PENDENTE
                 prioridade_status = 2
-            tipo = str(b.get('tipo_busca', '')).strip().lower()
-            prioridade_tipo = 0 if tipo == 'paga' else 1
-            data = b.get('data', '')
-            return (prioridade_status, prioridade_tipo, data)
+
+            # Ordenar por data de criação (quem chegou primeiro tem prioridade)
+            created_at = b.get('created_at', '')
+            return (prioridade_status, created_at)
+
         return sorted(buscas, key=prioridade_busca)
 
     def get_posicao_na_fila(self, busca: Dict[str, Any], todas_buscas: List[Dict[str, Any]]) -> int:

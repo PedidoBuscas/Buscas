@@ -78,8 +78,9 @@ class FormAgent:
                 "data", date.today()), key=f"data_{nonce}")
             data_br = data.strftime("%d/%m/%Y")
         with col2:
-            tipo_busca = st.selectbox("Busca paga ou cortesia", [
-                                      "Paga", "Cortesia"], key=f"tipo_busca_{nonce}")
+            # Remover selectbox e deixar apenas "Paga" como opção fixa
+            st.text_input("Tipo de Busca", value="Paga", disabled=True)
+            tipo_busca = "Paga"
         with col3:
             consultor_nome = st.session_state.get("consultor_nome", "")
             consultor_email = st.session_state.get("consultor_email", "")
