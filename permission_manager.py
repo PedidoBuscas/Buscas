@@ -7,15 +7,15 @@ from typing import List, Dict, Any, Optional
 CARGOS_JURIDICO = {
     'advogado': {
         'permissions': ['ver_proprias_objecoes'],
-        'menu_items': ['Minhas Objeções']
+        'menu_items': ['Minhas Solicitações Jurídicas']
     },
     'funcionario': {
         'permissions': ['solicitar_objecao', 'ver_proprias_objecoes'],
-        'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
+        'menu_items': ['Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     },
     'administrador': {
         'permissions': ['solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
-        'menu_items': ['Solicitar Objeção de Marca', 'Minhas Objeções']
+        'menu_items': ['Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     }
 }
 
@@ -37,7 +37,7 @@ CARGOS_FUNCIONARIO = {
 CARGOS_CONSULTOR = {
     'consultor': {
         'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'relatorio_custos_proprio'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     },
     'avaliador de marca': {
         'permissions': ['ver_proprias_buscas', 'relatorio_custos_proprio'],
@@ -45,7 +45,7 @@ CARGOS_CONSULTOR = {
     },
     'admin': {
         'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitar Objeção de Marca', 'Minhas Objeções']
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     }
 }
 
@@ -227,8 +227,8 @@ class CargoPermissionManager:
             'Minhas Buscas',
             'Solicitar Serviço de Patente',
             'Minhas Patentes',
-            'Solicitar Objeção de Marca',
-            'Minhas Objeções'
+            'Solicitação para o Jurídico',
+            'Minhas Solicitações Jurídicas'
         ]
 
         # Filtrar apenas os itens que existem no menu do usuário
@@ -281,8 +281,8 @@ class CargoPermissionManager:
             'Minhas Buscas': 'list-task',
             'Solicitar Serviço de Patente': 'file-earmark-arrow-up',
             'Minhas Patentes': 'file-earmark-text',
-            'Solicitar Objeção de Marca': 'exclamation-triangle',
-            'Minhas Objeções': 'clipboard-check'
+            'Solicitação para o Jurídico': 'exclamation-triangle',
+            'Minhas Solicitações Jurídicas': 'clipboard-check'
         }
 
         return [icon_mapping.get(item, 'question') for item in menu_items]
@@ -303,8 +303,8 @@ class CargoPermissionManager:
             'Minhas Buscas': 'ver_proprias_buscas',
             'Solicitar Serviço de Patente': 'solicitar_patente',
             'Minhas Patentes': 'ver_proprias_patentes',
-            'Solicitar Objeção de Marca': 'solicitar_objecao',
-            'Minhas Objeções': 'ver_proprias_objecoes',
+            'Solicitação para o Jurídico': 'solicitar_objecao',
+            'Minhas Solicitações Jurídicas': 'ver_proprias_objecoes',
             'Relatório de Custos': 'relatorio_custos'
         }
 

@@ -300,8 +300,17 @@ class BuscaManager:
                                 anexos.append((pdf_bytes, email_file_name))
                             marca = busca.get('marca', '')
                             consultor_nome = busca.get('nome_consultor', '')
+                            cpf_cnpj_cliente = busca.get(
+                                'cpf_cnpj_cliente', '')
+                            nome_cliente = busca.get('nome_cliente', '')
                             assunto = f"Busca Concluída - {marca} - {consultor_nome}"
-                            corpo = f"""<div style='font-family: Arial; font-size: 12pt;'>Olá,<br><br>Segue em anexo o resultado da busca.<br><br>Dados da busca:<br>- Marca: {marca}<br>- Consultor: {consultor_nome}<br>- Tipo de busca: {busca.get('tipo_busca', '')}<br>- Data: {busca.get('data', '')}<br>- Classes: {busca.get('classes', '')}<br>- Especificações: {busca.get('especificacoes', '')}<br><br>Atenciosamente,<br>Equipe AGP Consultoria</div>"""
+
+                            # Montar corpo do e-mail com dados do cliente
+                            corpo_cliente = ""
+                            if cpf_cnpj_cliente or nome_cliente:
+                                corpo_cliente = f"<br>- Cliente: {nome_cliente}<br>- CPF/CNPJ: {cpf_cnpj_cliente}"
+
+                            corpo = f"""<div style='font-family: Arial; font-size: 12pt;'>Olá,<br><br>Segue em anexo o resultado da busca.<br><br>Dados da busca:<br>- Marca: {marca}<br>- Consultor: {consultor_nome}{corpo_cliente}<br>- Tipo de busca: {busca.get('tipo_busca', '')}<br>- Data: {busca.get('data', '')}<br>- Classes: {busca.get('classes', '')}<br>- Especificações: {busca.get('especificacoes', '')}<br><br>Atenciosamente,<br>Equipe AGP Consultoria</div>"""
                             if len(anexos) > 1:
                                 self.email_agent.send_email_multiplos_anexos(
                                     destinatario=consultor_email,
@@ -347,6 +356,19 @@ class BuscaManager:
 
             if not isinstance(dados, dict):
                 raise ValueError("dados_completos não é um dicionário")
+
+            # Exibir dados do cliente se disponíveis
+            cpf_cnpj_cliente = dados.get('cpf_cnpj_cliente', '')
+            nome_cliente = dados.get('nome_cliente', '')
+            if cpf_cnpj_cliente or nome_cliente:
+                st.markdown("**Dados do Cliente:**")
+                if cpf_cnpj_cliente:
+                    st.markdown(
+                        f"<b>CPF/CNPJ:</b> {cpf_cnpj_cliente}", unsafe_allow_html=True)
+                if nome_cliente:
+                    st.markdown(
+                        f"<b>Nome:</b> {nome_cliente}", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
             for i, marca in enumerate(dados.get("marcas", [])):
                 st.markdown(

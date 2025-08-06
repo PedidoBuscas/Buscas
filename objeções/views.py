@@ -264,7 +264,7 @@ def solicitar_objecao(email_agent):
     destinatario_juridico = email_agent.destinatario_juridico
 
     # Título
-    st.title("📋 Solicitar Objeção de Marca")
+    st.title("📋 Solicitação para o Jurídico")
 
     # Cache dos consultores
     @st.cache_data(ttl=3600)

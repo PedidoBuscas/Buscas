@@ -7,7 +7,7 @@ from marcas.busca_manager import BuscaManager, get_user_attr
 from form_agent import FormAgent
 from email_agent import EmailAgent
 from supabase_agent import SupabaseAgent
-from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario, apply_sidebar_styles
+from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario
 from config import carregar_configuracoes, configurar_logging
 from permission_manager import CargoPermissionManager
 
@@ -58,9 +58,16 @@ def get_permission_manager(_supabase_agent):
 
 
 def main():
+    # Configurar página com ícone personalizado
+    st.set_page_config(
+        page_title="SIGEPI",
+        page_icon="a2nunes.jpeg",  # Nova logo
+        layout="centered",
+        initial_sidebar_state="expanded"
+    )
+
     config = carregar_configuracoes()
     configurar_logging()
-    apply_global_styles()
 
     # Usar cache para otimizar criação de agentes
     supabase_agent = get_supabase_agent()
@@ -79,27 +86,13 @@ def main():
     # Garantir que email_agent sempre esteja disponível
     st.session_state.email_agent = email_agent
 
-    # Verificação de segurança para email_agent
-    if not hasattr(st.session_state, 'email_agent') or st.session_state.email_agent is None:
-        st.session_state.email_agent = email_agent
-
-    # Garantir que email_agent esteja sempre disponível
-    try:
-        if st.session_state.email_agent is None:
-            st.session_state.email_agent = email_agent
-    except AttributeError:
-        st.session_state.email_agent = email_agent
-
-    # Verificação adicional para garantir que email_agent esteja disponível
-    if "email_agent" not in st.session_state:
-        st.session_state.email_agent = email_agent
-
-    # Garantir que email_agent esteja sempre disponível no session_state
-    st.session_state.email_agent = email_agent
-
     if "user" not in st.session_state:
         render_login_screen(supabase_agent)
         return
+
+    # Aplicar estilos globais apenas quando o usuário estiver logado
+    apply_global_styles()
+
     if "enviando_pedido" not in st.session_state:
         st.session_state.enviando_pedido = False
 
@@ -128,14 +121,14 @@ def main():
 
     with st.sidebar:
         # Adicionar logo e informações do usuário
-        st.image("Logo_sigepi.png", width=120)
+        st.image("a2nunes.jpeg", width=120)
 
         # Exibir informações do usuário com cargo
         if user_info['nome']:
             st.markdown(
-                f"<div style='color:#fff;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>"
+                f"<div style='color:#434f65;font-weight:600;font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;'>"
                 f"<span style='font-size:1.3em;margin-right:7px;vertical-align:middle;'>"
-                f"<svg width='22' height='22' viewBox='0 0 24 24' fill='white' xmlns='http://www.w3.org/2000/svg' style='display:inline-block;vertical-align:middle;'><path d='M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 100-8 4 4 0 000 8z'/></svg>"
+                f"<svg width='22' height='22' viewBox='0 0 24 24' fill='#434f65' xmlns='http://www.w3.org/2000/svg' style='display:inline-block;vertical-align:middle;'><path d='M12 12c2.7 0 8 1.34 8 4v2H4v-2c0-2.66 5.3-4 8-4zm0-2a4 4 0 100-8 4 4 0 000 8z'/></svg>"
                 f"</span>{user_info['nome']}</div>",
                 unsafe_allow_html=True
             )
@@ -153,19 +146,19 @@ def main():
             icons=menu_icons,
             key="menu_unico",
             styles={
-                "container": {"padding": "0!important", "background-color": "#35434f", "width": "100%"},
-                "icon": {"color": "#fff", "font-size": "18px"},
+                "container": {"padding": "0!important", "background-color": "#ffffff", "width": "100%"},
+                "icon": {"color": "#434f65", "font-size": "18px"},
                 "nav-link": {
                     "font-size": "15px",
                     "text-align": "left",
-                    "margin": "2px 0",
-                    "color": "#fff",
-                    "background-color": "#35434f",
-                    "border-radius": "6px",
-                    "padding": "8px 16px"
+                                  "margin": "2px 0",
+                                  "color": "#434f65",
+                                  "background-color": "#f8f9fa",
+                                  "border-radius": "6px",
+                                  "padding": "8px 16px"
                 },
                 "nav-link-selected": {
-                    "background-color": "#1caf9a",
+                    "background-color": "#434f65",
                     "color": "#fff",
                     "font-size": "15px",
                     "border-radius": "6px",
@@ -238,15 +231,15 @@ def main():
 
         patentes_views.minhas_patentes(email_agent)
 
-    elif escolha == "Solicitar Objeção de Marca":
-        if not permission_manager.check_page_permission(user_id, "Solicitar Objeção de Marca"):
+    elif escolha == "Solicitação para o Jurídico":
+        if not permission_manager.check_page_permission(user_id, "Solicitação para o Jurídico"):
             st.error("Você não tem permissão para acessar esta funcionalidade.")
             return
 
         objeções_views.solicitar_objecao(email_agent)
 
-    elif escolha == "Minhas Objeções":
-        if not permission_manager.check_page_permission(user_id, "Minhas Objeções"):
+    elif escolha == "Minhas Solicitações Jurídicas":
+        if not permission_manager.check_page_permission(user_id, "Minhas Solicitações Jurídicas"):
             st.error("Você não tem permissão para acessar esta funcionalidade.")
             return
 

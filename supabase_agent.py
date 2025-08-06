@@ -140,6 +140,11 @@ class SupabaseAgent:
             busca_data["status_busca"] = "pendente"
         # Remove analise_realizada se existir
         busca_data.pop("analise_realizada", None)
+
+        # Debug: Log dos dados sendo enviados
+        logging.info(f"Dados sendo enviados para Supabase: {busca_data}")
+        st.info(f"Debug - Dados sendo enviados: {busca_data}")
+
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas"
         headers = self._get_headers(jwt_token, content_type=True)
         resp = requests.post(url, headers=headers, json=busca_data)

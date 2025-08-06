@@ -15,7 +15,7 @@ def apply_global_styles():
         .stDeployButton {display: none !important;}
         
         [data-testid="stSidebar"] {
-            background-color: #35434f !important;
+            background-color: #ffffff !important;
         }
         html, body, [data-testid="stAppViewContainer"], .main, .block-container {
             background-color: #e6e8ec !important;
@@ -32,7 +32,7 @@ def apply_global_styles():
         .stTextInput > div > input {
             background-color: #fff !important;
             color: #35434f !important;
-            border: 1px solid #1caf9a !important;
+            border: 1px solid #434f65 !important;
             height: 40px !important;
             min-height: 40px !important;
             max-height: 40px !important;
@@ -53,7 +53,7 @@ def apply_global_styles():
             color: #35434f !important;
         }
         .stButton > button {
-            background-color: #1caf9a !important;
+            background-color: #434f65 !important;
             color: #fff !important;
             border: none !important;
             border-radius: 8px !important;
@@ -65,7 +65,7 @@ def apply_global_styles():
             max-height: 40px !important;
         }
         .stButton > button:hover {
-            background-color: #35434f !important;
+            background-color: #2a3441 !important;
             color: #fff !important;
         }
         .stExpander, .stExpander > div, .stExpander .streamlit-expanderContent {
@@ -78,8 +78,8 @@ def apply_global_styles():
         }
         .stDownloadButton > button {
             background-color: #fff;
-            color: #1caf9a;
-            border: 2px solid #1caf9a;
+            color: #434f65;
+            border: 2px solid #434f65;
             border-radius: 8px;
             font-weight: 600;
             padding: 10px 24px;
@@ -87,7 +87,7 @@ def apply_global_styles():
             transition: background 0.2s;
         }
         .stDownloadButton > button:hover {
-            background-color: #1caf9a;
+            background-color: #434f65;
             color: #fff;
         }
         input[disabled], .stTextInput input:disabled {
@@ -189,29 +189,34 @@ def render_login_screen(supabase_agent):
     st.markdown(
         """
         <style>
+        /* Força a página principal a alinhar no topo */
+        .main {
+            display: block !important;
+            padding-top: 40px;
+        }
+        
         html, body, [data-testid="stAppViewContainer"], .main, .block-container {
-            background-color: #35434f !important;
+            background-color: #ffffff !important;
         }
         .stTextInput > div > input {
             background-color: #fff !important;
         }
         .centered-login {
+            margin-top: 0px;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            min-height:1vh;
         }
         .login-title {
             font-size: 2rem;
             font-weight: 700;
             margin-bottom: 10px;
-            color: #fff;
+            color: #35434f;
             text-align: center;
         }
         .login-subtitle {
             font-size: 1.1rem;
-            color: #fff;
+            color: #35434f;
             margin-bottom: 24px;
             text-align: center;
         }
@@ -222,7 +227,7 @@ def render_login_screen(supabase_agent):
             background: #f5f7fa !important;
             color: #35434f !important;
             border-radius: 6px;
-            border: 1.5px solid #1caf9a;
+            border: 1.5px solid #434f65;
             width: 100% !important;
         }
         .stTextInput label {
@@ -230,7 +235,7 @@ def render_login_screen(supabase_agent):
             font-weight: 600;
         }
         .stButton > button {
-            background-color: #1caf9a;
+            background-color: #434f65;
             color: #fff;
             border-radius: 6px;
             font-weight: 600;
@@ -240,13 +245,13 @@ def render_login_screen(supabase_agent):
             margin-top: 8px;
         }
         .stButton > button:hover {
-            background-color: #35434f;
+            background-color: #2a3441;
             color: #fff;
         }
         .footer {
             text-align: center;
-            color: #35434f;
-            margin-top: 32px;
+            color: #666;
+            margin-top: 5px;
             font-size: 1rem;
         }
         </style>
@@ -286,7 +291,7 @@ def render_login_screen(supabase_agent):
         unsafe_allow_html=True
     )
 
-    st.image("Logo_sigepi.png", width=120)
+    st.image("a2nunes.jpeg", width=120)
     st.markdown('<div class="login-title">Bem-vindo</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="login-subtitle">Faça seu login</div>',
@@ -697,7 +702,7 @@ def render_sidebar(modulos=None):
         "<div style='text-align:center; width:100%;'>",
         unsafe_allow_html=True
     )
-    st.image("Logo_sigepi.png", width=120)
+    st.image("a2nunes.jpeg", width=120)
     st.markdown("</div>", unsafe_allow_html=True)
     nome = st.session_state.get("consultor_nome", None)
     if nome:
@@ -877,7 +882,7 @@ def exibir_especificacoes_pdf(busca, pdf):
         """
         <style>
         .stButton > button {
-            background-color: #1caf9a !important;
+            background-color: #434f65 !important;
             color: #fff !important;
             border: none !important;
             border-radius: 8px !important;
@@ -895,13 +900,13 @@ def exibir_especificacoes_pdf(busca, pdf):
             padding-left: 16px;
         }
         .stButton > button:hover {
-            background-color: #35434f !important;
+            background-color: #2a3441 !important;
             color: #fff !important;
         }
         /* Botão do módulo ativo (primeiro botão após login) */
         .stButton > button:focus:not(:active),
         .stButton > button:active {
-            background-color: #35434f !important;
+            background-color: #2a3441 !important;
             color: #fff !important;
             border: 2px solid #fff !important;
         }

@@ -79,8 +79,8 @@ class FormAgent:
             data_br = data.strftime("%d/%m/%Y")
         with col2:
             # Remover selectbox e deixar apenas "Paga" como opção fixa
-            st.text_input("Tipo de Busca", value="Paga", disabled=True)
-            tipo_busca = "Paga"
+            st.text_input("Tipo de Busca", value="Paga",
+                          disabled=True, key=f"tipo_busca_{nonce}")
         with col3:
             consultor_nome = st.session_state.get("consultor_nome", "")
             consultor_email = st.session_state.get("consultor_email", "")
@@ -88,6 +88,25 @@ class FormAgent:
             st.text_input("E-mail", value=consultor_email, disabled=True)
             consultor = consultor_nome
             st.session_state["consultor"] = consultor
+
+        # --- Dados do Cliente ---
+        st.markdown(
+            '<b style="font-size:1.2rem;color:#002060;">Dados do Cliente</b>', unsafe_allow_html=True)
+        col_cliente1, col_cliente2 = st.columns([1, 1])
+        with col_cliente1:
+            cpf_cnpj_cliente = st.text_input(
+                "CPF/CNPJ do Cliente",
+                value=st.session_state.get("cpf_cnpj_cliente", ""),
+                key=f"cpf_cnpj_cliente_{nonce}",
+                placeholder="Digite o CPF ou CNPJ do cliente"
+            )
+        with col_cliente2:
+            nome_cliente = st.text_input(
+                "Nome do Cliente",
+                value=st.session_state.get("nome_cliente", ""),
+                key=f"nome_cliente_{nonce}",
+                placeholder="Digite o nome completo do cliente"
+            )
 
         st.markdown("""
     <style>
@@ -296,6 +315,20 @@ class FormAgent:
                 st.error(
                     "Por favor, preencha o nome do consultor antes de enviar.")
                 return None
+
+            # Validar campos do cliente
+            cpf_cnpj_cliente_val = st.session_state.get(
+                f"cpf_cnpj_cliente_{nonce}", "").strip()
+            if not cpf_cnpj_cliente_val:
+                st.error(
+                    "Por favor, preencha o CPF/CNPJ do cliente antes de enviar.")
+                return None
+
+            nome_cliente_val = st.session_state.get(
+                f"nome_cliente_{nonce}", "").strip()
+            if not nome_cliente_val:
+                st.error("Por favor, preencha o nome do cliente antes de enviar.")
+                return None
             for i, marca in enumerate(st.session_state.marcas):
                 # Validar se o nome da marca está preenchido
                 marca_val = st.session_state.get(
@@ -333,6 +366,8 @@ class FormAgent:
                 "data": st.session_state.get(f"data_{nonce}", date.today()).strftime("%d/%m/%Y"),
                 "tipo_busca": st.session_state.get(f"tipo_busca_{nonce}", ""),
                 "consultor": consultor_val,
+                "cpf_cnpj_cliente": cpf_cnpj_cliente_val,
+                "nome_cliente": nome_cliente_val,
                 "marcas": st.session_state.marcas,
                 "observacao": st.session_state.get(f"observacao_{nonce}", "")
             }

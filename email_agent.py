@@ -25,6 +25,8 @@ class EmailAgent:
         # Extrair dados principais
         tipo_busca = form_data.get('tipo_busca', '')
         consultor = form_data.get('consultor', '')
+        cpf_cnpj_cliente = form_data.get('cpf_cnpj_cliente', '')
+        nome_cliente = form_data.get('nome_cliente', '')
         marcas = form_data.get('marcas', [])
         nome_marca = ''
         classes = ''
@@ -33,8 +35,8 @@ class EmailAgent:
             classes = ', '.join([c.get('classe', '') for c in marcas[0].get(
                 'classes', []) if c.get('classe', '')])
         data_br = form_data.get('data', '')
-        # Montar título conforme solicitado, incluindo a data brasileira
-        subject = f"Pedido de busca de marca {tipo_busca} - Data: {data_br} - Marca: {nome_marca} - Classes: {classes} - Consultor: {consultor}"
+        # Montar título conforme solicitado, incluindo a data brasileira e dados do cliente
+        subject = f"Pedido de busca de marca {tipo_busca} - Data: {data_br} - Marca: {nome_marca} - Classes: {classes} - Cliente: {nome_cliente} - Consultor: {consultor}"
         # Montar corpo HTML
         body_html = self._format_body_html(form_data)
         msg = EmailMessage()
@@ -111,13 +113,17 @@ class EmailAgent:
         tipo_busca = form_data.get('tipo_busca', '')
         consultor = form_data.get('consultor', '')
         consultor_email = form_data.get('consultor_email', '')
+        cpf_cnpj_cliente = form_data.get('cpf_cnpj_cliente', '')
+        nome_cliente = form_data.get('nome_cliente', '')
         marcas = form_data.get('marcas', [])
         html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
             <b>Data:</b> {data}<br>
             <b>Tipo de busca:</b> {tipo_busca}<br>
             <b>Consultor:</b> {consultor}<br>
-            <b>E-mail do consultor:</b> {consultor_email}<br><br>
+            <b>E-mail do consultor:</b> {consultor_email}<br>
+            <b>CPF/CNPJ do Cliente:</b> {cpf_cnpj_cliente}<br>
+            <b>Nome do Cliente:</b> {nome_cliente}<br><br>
         """
         if marcas:
             html += f"<b>Marca:</b> {marcas[0].get('marca', '')}<br>"
