@@ -309,7 +309,6 @@ class FormAgent:
 
         # --- Botão de envio final ---
         if st.button("Enviar Pedido de Busca", key=f"enviar_final_{nonce}", disabled=st.session_state.get('enviando_pedido', False)):
-            st.session_state.enviando_pedido = True
             consultor_val = st.session_state.get("consultor", "").strip()
             if not consultor_val:
                 st.error(
@@ -317,17 +316,18 @@ class FormAgent:
                 return None
 
             # Validar campos do cliente
+            nome_cliente_val = st.session_state.get(
+                f"nome_cliente_{nonce}", "").strip()
+            if not nome_cliente_val:
+                st.error("Por favor, preencha o nome do cliente antes de enviar.")
+                return None
+
+            # CPF/CNPJ é obrigatório
             cpf_cnpj_cliente_val = st.session_state.get(
                 f"cpf_cnpj_cliente_{nonce}", "").strip()
             if not cpf_cnpj_cliente_val:
                 st.error(
                     "Por favor, preencha o CPF/CNPJ do cliente antes de enviar.")
-                return None
-
-            nome_cliente_val = st.session_state.get(
-                f"nome_cliente_{nonce}", "").strip()
-            if not nome_cliente_val:
-                st.error("Por favor, preencha o nome do cliente antes de enviar.")
                 return None
             for i, marca in enumerate(st.session_state.marcas):
                 # Validar se o nome da marca está preenchido
@@ -361,6 +361,8 @@ class FormAgent:
                         f"classe_{i}_{j}_{nonce}", "")
                     classe["especificacao"] = st.session_state.get(
                         f"especificacao_{i}_{j}_{nonce}", "")
+
+            # Só definir envio_sucesso = True se todas as validações passaram
             st.session_state.envio_sucesso = True
             form_data = {
                 "data": st.session_state.get(f"data_{nonce}", date.today()).strftime("%d/%m/%Y"),

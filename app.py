@@ -60,7 +60,7 @@ def get_permission_manager(_supabase_agent):
 def main():
     # Configurar página com ícone personalizado
     st.set_page_config(
-        page_title="SIGEPI",
+        page_title="A2NUNES",
         page_icon="a2nunes.jpeg",  # Nova logo
         layout="centered",
         initial_sidebar_state="expanded"
@@ -244,6 +244,24 @@ def main():
             return
 
         objeções_views.minhas_objecoes(email_agent)
+
+    elif escolha == "Relatório de Custos":
+        if not permission_manager.check_page_permission(user_id, "Relatório de Custos"):
+            st.error("Você não tem permissão para acessar esta funcionalidade.")
+            return
+
+        # Determinar se é admin baseado no tipo de usuário
+        try:
+            cargo_info = permission_manager.get_user_cargo_info(user_id)
+            is_admin = cargo_info['is_admin'] is True
+        except Exception as e:
+            st.warning("⚠️ Erro ao determinar permissões de administrador.")
+            st.info("Tente novamente ou entre em contato com o suporte.")
+            return
+
+        # Importar e executar o relatório de custos
+        from marcas.relatorio_custos import relatorio_custos
+        relatorio_custos(busca_manager, is_admin, user_id)
 
 
 if __name__ == "__main__":

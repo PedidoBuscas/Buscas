@@ -12,6 +12,7 @@ MODULO_INFO = {
 
 def solicitar_busca(form_agent, busca_manager):
     st.header("Solicitar Busca de Marca")
+
     if st.session_state.get('enviando_pedido', False):
         # Overlay será mostrado pelo form_agent
         form_agent.collect_data()  # para garantir overlay
@@ -25,12 +26,21 @@ def solicitar_busca(form_agent, busca_manager):
         st.rerun()
     else:
         form_data = form_agent.collect_data()
+
         if form_data and st.session_state.get('envio_sucesso', False):
             st.session_state['last_form_data'] = form_data
             st.session_state.enviando_pedido = True
             # Enviar busca usando o manager
             if busca_manager.enviar_busca(form_data):
+                st.success("✅ Busca enviada com sucesso!")
+                # Limpar o estado de sucesso após envio bem-sucedido
+                st.session_state.envio_sucesso = False
                 st.rerun()
+            else:
+                st.error("❌ Erro ao enviar busca!")
+                # Se falhou o envio, resetar o estado
+                st.session_state.enviando_pedido = False
+                st.session_state.envio_sucesso = False
 
 
 @st.cache_data(ttl=60)  # 1 minuto
@@ -249,33 +259,14 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
     # Inicializar variáveis de session_state necessárias
     if 'aba_atual' not in st.session_state:
         st.session_state.aba_atual = 0
-    if 'acessando_relatorio_custos' not in st.session_state:
-        st.session_state.acessando_relatorio_custos = False
     if 'admin_aba_atual' not in st.session_state:
         st.session_state.admin_aba_atual = 0
-
-    # Verificar se usuário tem permissão para relatório de custos
-    from permission_manager import CargoPermissionManager
-    from supabase_agent import SupabaseAgent
-
-    supabase_agent = SupabaseAgent()
-    permission_manager = CargoPermissionManager(supabase_agent)
-
-    # Verificação mais robusta de permissões
-    try:
-        tem_permissao_custos = permission_manager.check_page_permission(
-            user_id, "Relatório de Custos")
-    except Exception as e:
-        # Se houver erro na verificação, permitir acesso para evitar redirecionamento
-        st.warning("⚠️ Erro ao verificar permissões de relatório.")
-        st.info("💡 Tentando carregar relatório...")
-        tem_permissao_custos = True  # Permitir acesso para evitar redirecionamento
 
     if is_admin:
         # Usar lógica FIXA como os consultores para evitar problemas de redirecionamento
         pendentes = buscas_por_status[busca_manager.STATUS_PENDENTE]
         recebidas = buscas_por_status[busca_manager.STATUS_RECEBIDA]
-        em_analise = buscas_por_status[busca_manager.STATUS_EM_ANALISE]
+        em_execucao = buscas_por_status[busca_manager.STATUS_EM_EXECUCAO]
         concluidas = buscas_por_status[busca_manager.STATUS_CONCLUIDA]
 
         # Criar abas em ordem FIXA
@@ -287,15 +278,10 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
         abas.append(pendentes)
         labels.append("Recebidas")
         abas.append(recebidas)
-        labels.append("Em Análise")
-        abas.append(em_analise)
+        labels.append("Em Execução")
+        abas.append(em_execucao)
         labels.append("Concluídas")
         abas.append(concluidas)
-
-        # Adicionar aba de relatório de custos se tiver permissão
-        if tem_permissao_custos:
-            labels.append("📊 Relatório de Custos")
-            abas.append([])  # Lista vazia para a aba de custos
 
         if not any(abas):  # Se todas as abas estão vazias
             st.info("Nenhuma busca realizada ainda.")
@@ -311,24 +297,7 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
                 if 'aba_atual' not in st.session_state:
                     st.session_state.aba_atual = i
 
-                if labels[i] == "📊 Relatório de Custos":
-                    # Marcar que está acessando o relatório de custos
-                    st.session_state.acessando_relatorio_custos = True
-                    st.session_state.aba_atual = i
-                    st.session_state.admin_aba_atual = i
-
-                    # Exibir relatório de custos
-                    from marcas.relatorio_custos import relatorio_custos
-                    try:
-                        relatorio_custos(busca_manager, is_admin, user_id)
-                    except Exception as e:
-                        st.error(
-                            f"❌ Erro ao carregar relatório de custos: {e}")
-                        st.info(
-                            "💡 Tente novamente ou entre em contato com o suporte.")
-                        st.info(
-                            "🔄 Se o problema persistir, tente recarregar a página.")
-                elif labels[i] == "Concluídas":
+                if labels[i] == "Concluídas":
                     # Organizar por mês primeiro, depois por consultor (apenas para Concluídas)
                     buscas_concluidas = abas[i]
                     if buscas_concluidas:
@@ -366,7 +335,7 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
     else:
         enviadas = buscas_por_status[busca_manager.STATUS_PENDENTE] + \
             buscas_por_status[busca_manager.STATUS_RECEBIDA] + \
-            buscas_por_status[busca_manager.STATUS_EM_ANALISE]
+            buscas_por_status[busca_manager.STATUS_EM_EXECUCAO]
         concluidas = buscas_por_status[busca_manager.STATUS_CONCLUIDA]
         abas = []
         labels = []
@@ -376,11 +345,6 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
         if concluidas:
             labels.append("Concluídas")
             abas.append(concluidas)
-
-        # Adicionar aba de relatório de custos se tiver permissão
-        if tem_permissao_custos:
-            labels.append("📊 Relatório de Custos")
-            abas.append([])  # Lista vazia para a aba de custos
 
         if not abas:
             st.info("Nenhuma busca realizada ainda.")
@@ -396,23 +360,7 @@ def minhas_buscas(busca_manager, is_admin, todas_buscas_fila=None):
                 if 'aba_atual' not in st.session_state:
                     st.session_state.aba_atual = i
 
-                if labels[i] == "📊 Relatório de Custos":
-                    # Marcar que está acessando o relatório de custos
-                    st.session_state.acessando_relatorio_custos = True
-                    st.session_state.aba_atual = i
-
-                    # Exibir relatório de custos
-                    from marcas.relatorio_custos import relatorio_custos
-                    try:
-                        relatorio_custos(busca_manager, is_admin, user_id)
-                    except Exception as e:
-                        st.error(
-                            f"❌ Erro ao carregar relatório de custos: {e}")
-                        st.info(
-                            "💡 Tente novamente ou entre em contato com o suporte.")
-                        st.info(
-                            "🔄 Se o problema persistir, tente recarregar a página.")
-                elif labels[i] == "Concluídas":
+                if labels[i] == "Concluídas":
                     # Organizar por mês apenas para Concluídas (usuários não-admin)
                     buscas_concluidas = abas[i]
                     if buscas_concluidas:

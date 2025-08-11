@@ -32,7 +32,7 @@ class BuscaManager:
     # Status possíveis para as buscas
     STATUS_PENDENTE = "pendente"
     STATUS_RECEBIDA = "recebida"
-    STATUS_EM_ANALISE = "em_analise"
+    STATUS_EM_EXECUCAO = "em_execucao"
     STATUS_CONCLUIDA = "concluida"
 
     def __init__(self, supabase_agent, email_agent):
@@ -100,6 +100,7 @@ class BuscaManager:
         try:
             # Processar dados para salvar
             busca_data = self.processar_form_data(form_data)
+            logging.info(f"Debug: Dados processados para busca")
 
             # Adicionar e-mail do consultor para o e-mail
             form_data["consultor_email"] = st.session_state.get(
@@ -183,7 +184,7 @@ class BuscaManager:
         status_map = {
             self.STATUS_PENDENTE: "Pendente",
             self.STATUS_RECEBIDA: "Recebida",
-            self.STATUS_EM_ANALISE: "Em Análise",
+            self.STATUS_EM_EXECUCAO: "Em Execução",
             self.STATUS_CONCLUIDA: "Concluída"
         }
         return status_map.get(status, status)
@@ -193,7 +194,7 @@ class BuscaManager:
         icon_map = {
             self.STATUS_PENDENTE: "⏳",
             self.STATUS_RECEBIDA: "📥",
-            self.STATUS_EM_ANALISE: "🔍",
+            self.STATUS_EM_EXECUCAO: "🔍",
             self.STATUS_CONCLUIDA: "✅"
         }
         return icon_map.get(status, "❓")
@@ -203,7 +204,7 @@ class BuscaManager:
         Determina o status atual baseado em status_busca persistente no banco.
         """
         status = busca.get('status_busca', self.STATUS_PENDENTE)
-        if status not in [self.STATUS_PENDENTE, self.STATUS_RECEBIDA, self.STATUS_EM_ANALISE, self.STATUS_CONCLUIDA]:
+        if status not in [self.STATUS_PENDENTE, self.STATUS_RECEBIDA, self.STATUS_EM_EXECUCAO, self.STATUS_CONCLUIDA]:
             return self.STATUS_PENDENTE
         return status
 
@@ -258,13 +259,13 @@ class BuscaManager:
             if busca.get('observacao'):
                 st.write(f"Observação: {busca.get('observacao')}")
 
-            # Upload de PDF para admin APENAS se status for EM_ANALISE ou CONCLUIDA
-            if is_admin and status in [self.STATUS_EM_ANALISE, self.STATUS_CONCLUIDA]:
+            # Upload de PDF para admin APENAS se status for EM_EXECUCAO ou CONCLUIDA
+            if is_admin and status in [self.STATUS_EM_EXECUCAO, self.STATUS_CONCLUIDA]:
                 st.markdown("---")
-                st.write("Upload do PDF do resultado da busca:")
-                uploaded_files = st.file_uploader("Selecione os PDFs", type=[
-                                                  "pdf"], accept_multiple_files=True, key=f"pdf_{busca['id']}")
-                if uploaded_files and st.button("Enviar PDF(s)", key=f"btn_pdf_{busca['id']}"):
+                st.write("Upload dos arquivos do resultado da busca:")
+                uploaded_files = st.file_uploader("Selecione os arquivos", type=[
+                                                  "pdf", "doc", "docx", "txt", "jpg", "jpeg", "png", "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar"], accept_multiple_files=True, key=f"pdf_{busca['id']}")
+                if uploaded_files and st.button("Enviar Arquivo(s)", key=f"btn_pdf_{busca['id']}"):
                     admin_uid = get_user_id(st.session_state.user)
                     st.info(f"UID do admin logado no upload: {admin_uid}")
                     pdf_urls = []
@@ -284,8 +285,8 @@ class BuscaManager:
                     # Atualiza pdf_buscas como lista de URLs
                     self.supabase_agent.update_busca_pdf_url(
                         busca['id'], pdf_urls)
-                    # Se estiver em análise, já marca como concluída
-                    if status == self.STATUS_EM_ANALISE:
+                    # Se estiver em execução, já marca como concluída
+                    if status == self.STATUS_EM_EXECUCAO:
                         self.atualizar_status_busca(
                             busca['id'], self.STATUS_CONCLUIDA)
                         # NOVO: Usar o e-mail salvo na busca
@@ -329,17 +330,17 @@ class BuscaManager:
                         else:
                             st.warning(
                                 f"E-mail do consultor não encontrado na busca (busca id: {busca.get('id')})")
-                    st.success("PDF(s) enviado(s) com sucesso!")
+                    st.success("Arquivo(s) enviado(s) com sucesso!")
                     st.rerun()
 
-            # Exibir links de download dos PDFs se existirem
+            # Exibir links de download dos arquivos se existirem
             if busca.get("pdf_buscas"):
                 pdfs = busca["pdf_buscas"]
                 if isinstance(pdfs, str):
                     pdfs = [pdfs]
-                st.markdown("**PDF(s) do resultado:**")
+                st.markdown("**Arquivo(s) do resultado:**")
                 for i, url in enumerate(pdfs):
-                    st.markdown(f"[📄 PDF {i+1}]({url})",
+                    st.markdown(f"[📄 Arquivo {i+1}]({url})",
                                 unsafe_allow_html=True)
 
             # Botões de ação
@@ -425,10 +426,10 @@ class BuscaManager:
             with col_status:
                 # Avançar para próxima etapa
                 if status_atual == self.STATUS_RECEBIDA:
-                    if st.button("🔍 Em Análise", key=f"analise_{busca['id']}"):
-                        if self.atualizar_status_busca(busca['id'], self.STATUS_EM_ANALISE):
+                    if st.button("🔍 Em Execução", key=f"analise_{busca['id']}"):
+                        if self.atualizar_status_busca(busca['id'], self.STATUS_EM_EXECUCAO):
                             st.rerun()
-                elif status_atual == self.STATUS_EM_ANALISE:
+                elif status_atual == self.STATUS_EM_EXECUCAO:
                     if st.button("✅ Concluída", key=f"concluida_{busca['id']}"):
                         if self.atualizar_status_busca(busca['id'], self.STATUS_CONCLUIDA):
                             st.rerun()
@@ -445,7 +446,7 @@ class BuscaManager:
         def prioridade_busca(b):
             status = self.get_status_atual(b)
             # Menor valor = maior prioridade
-            if status == self.STATUS_EM_ANALISE:
+            if status == self.STATUS_EM_EXECUCAO:
                 prioridade_status = 0
             elif status == self.STATUS_RECEBIDA:
                 prioridade_status = 1
@@ -460,9 +461,9 @@ class BuscaManager:
 
     def get_posicao_na_fila(self, busca: Dict[str, Any], todas_buscas: List[Dict[str, Any]]) -> int:
         """Retorna quantas buscas estão na frente da busca informada na fila de análise (status RECEBIDA, PENDENTE ou EM_ANALISE, ordenadas por prioridade)."""
-        # Considera buscas RECEBIDA, PENDENTE e EM_ANALISE
+        # Considera buscas RECEBIDA, PENDENTE e EM_EXECUCAO
         pendentes = [b for b in todas_buscas if self.get_status_atual(
-            b) in [self.STATUS_RECEBIDA, self.STATUS_PENDENTE, self.STATUS_EM_ANALISE]]
+            b) in [self.STATUS_RECEBIDA, self.STATUS_PENDENTE, self.STATUS_EM_EXECUCAO]]
         pendentes_ordenadas = self.ordenar_buscas_prioridade(pendentes)
         # Busca o índice da busca na lista ordenada
         for idx, b in enumerate(pendentes_ordenadas):
@@ -477,7 +478,7 @@ class BuscaManager:
         resultado = {
             self.STATUS_PENDENTE: [],
             self.STATUS_RECEBIDA: [],
-            self.STATUS_EM_ANALISE: [],
+            self.STATUS_EM_EXECUCAO: [],
             self.STATUS_CONCLUIDA: []
         }
 

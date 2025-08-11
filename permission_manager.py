@@ -15,7 +15,7 @@ CARGOS_JURIDICO = {
     },
     'administrador': {
         'permissions': ['solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
-        'menu_items': ['Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
+        'menu_items': ['Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas', 'Relatório de Custos']
     }
 }
 
@@ -30,22 +30,26 @@ CARGOS_FUNCIONARIO = {
     },
     'administrador': {
         'permissions': ['solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'gerenciar_buscas', 'ver_todas_buscas', 'relatorio_custos'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes']
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Relatório de Custos', 'Solicitar Serviço de Patente', 'Minhas Patentes']
     }
 }
 
 CARGOS_CONSULTOR = {
     'consultor': {
-        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'relatorio_custos_proprio'],
+        'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_buscas', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes'],
         'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     },
     'avaliador de marca': {
-        'permissions': ['ver_proprias_buscas', 'relatorio_custos_proprio'],
+        'permissions': ['ver_proprias_buscas'],
         'menu_items': ['Minhas Buscas']
+    },
+    'financeiro': {
+        'permissions': ['relatorio_custos'],
+        'menu_items': ['Relatório de Custos']
     },
     'admin': {
         'permissions': ['solicitar_busca', 'ver_proprias_buscas', 'gerenciar_buscas', 'ver_todas_buscas', 'solicitar_patente', 'ver_proprias_patentes', 'gerenciar_patentes', 'solicitar_objecao', 'ver_proprias_objecoes', 'gerenciar_objecoes', 'ver_todas_objecoes', 'relatorio_custos'],
-        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
+        'menu_items': ['Solicitar Busca', 'Minhas Buscas', 'Relatório de Custos', 'Solicitar Serviço de Patente', 'Minhas Patentes', 'Solicitação para o Jurídico', 'Minhas Solicitações Jurídicas']
     }
 }
 
@@ -214,6 +218,11 @@ class CargoPermissionManager:
                     cargo, {}).get('menu_items', [])
                 menu_items.update(items)
 
+        # Filtrar "Relatório de Custos" apenas para admins ou cargo financeiro
+        if 'Relatório de Custos' in menu_items:
+            if not cargo_info['is_admin'] and cargo_info['cargo'] != 'financeiro':
+                menu_items.remove('Relatório de Custos')
+
         # Ordenar itens de menu de forma lógica
         return self._ordenar_menu_items(list(menu_items))
 
@@ -225,6 +234,7 @@ class CargoPermissionManager:
         ordem_logica = [
             'Solicitar Busca',
             'Minhas Buscas',
+            'Relatório de Custos',
             'Solicitar Serviço de Patente',
             'Minhas Patentes',
             'Solicitação para o Jurídico',
@@ -279,6 +289,7 @@ class CargoPermissionManager:
         icon_mapping = {
             'Solicitar Busca': 'search',
             'Minhas Buscas': 'list-task',
+            'Relatório de Custos': 'graph-up',
             'Solicitar Serviço de Patente': 'file-earmark-arrow-up',
             'Minhas Patentes': 'file-earmark-text',
             'Solicitação para o Jurídico': 'exclamation-triangle',
@@ -313,12 +324,10 @@ class CargoPermissionManager:
         if not required_permission:
             return True  # Se não há permissão definida, permite acesso
 
-        # Para relatório de custos, verificar se é admin ou tem permissão própria
+        # Para relatório de custos, verificar se é admin ou tem cargo financeiro
         if page_name == "Relatório de Custos":
-            has_relatorio_custos = self.has_permission(
-                user_id, 'relatorio_custos')
-            has_relatorio_custos_proprio = self.has_permission(
-                user_id, 'relatorio_custos_proprio')
-            return has_relatorio_custos or has_relatorio_custos_proprio
+            cargo_info = self.get_user_cargo_info(user_id)
+            # Permitir se é admin ou se tem cargo financeiro
+            return cargo_info['is_admin'] is True or cargo_info['cargo'] == 'financeiro'
 
         return self.has_permission(user_id, required_permission)

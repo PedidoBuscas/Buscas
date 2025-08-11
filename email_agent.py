@@ -18,6 +18,152 @@ class EmailAgent:
         self.destinatario_juridico = destinatario_juridico
         self.destinatario_juridico_um = destinatario_juridico_um
 
+    def enviar_notificacao_documento_busca(self, busca_data, anexos, consultor_nome):
+        """
+        Envia notificação para destinatarios quando consultor adiciona documento de busca
+        """
+        if not self.destinatarios:
+            st.warning(
+                "⚠️ Destinatários de busca não configurados. E-mail não será enviado.")
+            return False
+
+        marca = busca_data.get('marca', 'N/A')
+        nome_cliente = busca_data.get('nome_cliente', 'N/A')
+        cpf_cnpj_cliente = busca_data.get('cpf_cnpj_cliente', 'N/A')
+        tipo_busca = busca_data.get('tipo_busca', 'N/A')
+
+        subject = f"Novo documento adicionado - Busca de Marca: {marca} - Consultor: {consultor_nome}"
+
+        body_html = f"""
+        <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
+            <h3>Novo Documento Adicionado - Busca de Marca</h3>
+            <p><b>Marca:</b> {marca}</p>
+            <p><b>Cliente:</b> {nome_cliente}</p>
+            <p><b>CPF/CNPJ:</b> {cpf_cnpj_cliente}</p>
+            <p><b>Tipo de Busca:</b> {tipo_busca}</p>
+            <p><b>Consultor:</b> {consultor_nome}</p>
+            <p>Um novo documento foi adicionado pelo consultor e está anexado a este e-mail.</p>
+        </div>
+        """
+
+        return self._enviar_email_com_anexos(self.destinatarios, subject, body_html, anexos)
+
+    def enviar_notificacao_documento_patente(self, patente_data, anexos, consultor_nome):
+        """
+        Envia notificação para destinatario_enge quando consultor adiciona documento de patente
+        """
+        from config import carregar_configuracoes
+        config = carregar_configuracoes()
+        destinatario_enge = config.get("destinatario_enge", "")
+
+        if not destinatario_enge:
+            st.warning(
+                "⚠️ Destinatário de engenharia não configurado. E-mail não será enviado.")
+            return False
+
+        titulo = patente_data.get('titulo', 'N/A')
+        cliente = patente_data.get('cliente', 'N/A')
+        servico = patente_data.get('servico', 'N/A')
+
+        subject = f"Novo documento adicionado - Patente: {titulo} - Consultor: {consultor_nome}"
+
+        body_html = f"""
+        <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
+            <h3>Novo Documento Adicionado - Patente</h3>
+            <p><b>Título:</b> {titulo}</p>
+            <p><b>Cliente:</b> {cliente}</p>
+            <p><b>Serviço:</b> {servico}</p>
+            <p><b>Consultor:</b> {consultor_nome}</p>
+            <p>Um novo documento foi adicionado pelo consultor e está anexado a este e-mail.</p>
+        </div>
+        """
+
+        return self._enviar_email_com_anexos([destinatario_enge], subject, body_html, anexos)
+
+    def enviar_notificacao_documento_objecao(self, objecao_data, anexos, consultor_nome):
+        """
+        Envia notificação para destinatario_juridico e destinatario_juridico_um quando consultor adiciona documento de serviço jurídico
+        """
+        destinatarios = []
+        if self.destinatario_juridico:
+            destinatarios.append(self.destinatario_juridico)
+        if self.destinatario_juridico_um:
+            destinatarios.append(self.destinatario_juridico_um)
+
+        if not destinatarios:
+            st.warning(
+                "⚠️ Destinatários jurídicos não configurados. E-mail não será enviado.")
+            return False
+
+        marca = objecao_data.get('marca', 'N/A')
+        nomecliente = objecao_data.get('nomecliente', 'N/A')
+        servico = objecao_data.get('servico', 'N/A')
+
+        subject = f"Novo documento adicionado - Serviço Jurídico: {marca} - Consultor: {consultor_nome}"
+
+        # Adicionar observação se existir
+        observacao = objecao_data.get('observacao', '')
+        observacao_html = ""
+        if observacao:
+            observacao_html = f"<p><b>Observação:</b> {observacao}</p>"
+
+        body_html = f"""
+        <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
+            <h3>Novo Documento Adicionado - Serviço Jurídico</h3>
+            <p><b>Marca:</b> {marca}</p>
+            <p><b>Cliente:</b> {nomecliente}</p>
+            <p><b>Serviço:</b> {servico}</p>
+            <p><b>Consultor:</b> {consultor_nome}</p>
+            {observacao_html}
+            <p>Um novo documento foi adicionado pelo consultor e está anexado a este e-mail.</p>
+        </div>
+        """
+
+        return self._enviar_email_com_anexos(destinatarios, subject, body_html, anexos)
+
+    def _enviar_email_com_anexos(self, destinatarios, subject, body_html, anexos):
+        """
+        Método auxiliar para enviar email com anexos para múltiplos destinatários
+        """
+        try:
+            msg = EmailMessage()
+            msg["Subject"] = subject
+            msg["From"] = self.smtp_user
+            msg["To"] = ", ".join(destinatarios)
+            msg.set_content(body_html, subtype='html')
+
+            # Adicionar anexos
+            for anexo in anexos:
+                if isinstance(anexo, dict) and 'content' in anexo and 'filename' in anexo:
+                    msg.add_attachment(
+                        anexo['content'],
+                        maintype="application",
+                        subtype="pdf",
+                        filename=anexo['filename']
+                    )
+                elif isinstance(anexo, tuple) and len(anexo) == 2:
+                    # Formato (bytes, filename)
+                    msg.add_attachment(
+                        anexo[0],
+                        maintype="application",
+                        subtype="pdf",
+                        filename=anexo[1]
+                    )
+
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_pass)
+                server.send_message(msg)
+
+            st.success(
+                f"E-mail de notificação enviado com sucesso para: {', '.join(destinatarios)}")
+            return True
+
+        except Exception as e:
+            st.error(f"Erro ao enviar e-mail de notificação: {e}")
+            logging.error(f"Erro ao enviar e-mail de notificação: {e}")
+            return False
+
     def send_email(self, form_data):
         """
         Envia um e-mail com os dados do formulário de busca para os destinatários configurados.
@@ -146,15 +292,17 @@ class EmailAgent:
 
     def enviar_email_nova_objecao(self, destinatario: str, objecao_data: dict):
         """
-        Envia e-mail de notificação para nova objeção de marca.
+        Envia e-mail de notificação para novo serviço jurídico.
         """
         # Verificar parâmetros
         if not destinatario or not destinatario.strip():
-            st.error("Destinatário não fornecido para e-mail de nova objeção.")
+            st.error(
+                "Destinatário não fornecido para e-mail de novo serviço jurídico.")
             return False
 
         if not objecao_data:
-            st.error("Dados da objeção não fornecidos para e-mail de nova objeção.")
+            st.error(
+                "Dados do serviço jurídico não fornecidos para e-mail de novo serviço jurídico.")
             return False
 
         marca = objecao_data.get('marca', 'N/A')
@@ -174,15 +322,22 @@ class EmailAgent:
         processos_text = '<br>'.join(
             processos_info) if processos_info else 'N/A'
 
-        subject = f"Nova Objeção de Marca - {marca} - Cliente: {nomecliente}"
+        subject = f"Novo Serviço Jurídico - {marca} - Cliente: {nomecliente}"
+
+        # Adicionar observação se existir
+        observacao = objecao_data.get('observacao', '')
+        observacao_html = ""
+        if observacao:
+            observacao_html = f"<p><b>Observação:</b> {observacao}</p>"
 
         body_html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
-            <h3>Nova Objeção de Marca Solicitada</h3>
+            <h3>Novo Serviço Jurídico Solicitado</h3>
             <p><b>Marca:</b> {marca}</p>
             <p><b>Cliente:</b> {nomecliente}</p>
             <p><b>Serviço:</b> {servico}</p>
             <p><b>Processos:</b><br>{processos_text}</p>
+            {observacao_html}
         </div>
         """
 
@@ -219,7 +374,7 @@ class EmailAgent:
 
     def enviar_email_objecao_consultor(self, destinatario: str, objecao: dict, anexos: list):
         """
-        Envia e-mail para consultor com documentos da objeção.
+        Envia e-mail para consultor com documentos do serviço jurídico.
         """
         # Verificar parâmetros
         if not destinatario or not destinatario.strip():
@@ -227,7 +382,8 @@ class EmailAgent:
             return False
 
         if not objecao:
-            st.error("Dados da objeção não fornecidos para e-mail do consultor.")
+            st.error(
+                "Dados do serviço jurídico não fornecidos para e-mail do consultor.")
             return False
 
         marca = objecao.get('marca', 'N/A')
@@ -246,15 +402,22 @@ class EmailAgent:
         processos_text = '<br>'.join(
             processos_info) if processos_info else 'N/A'
 
-        subject = f"Documentos da Objeção - {marca} - Cliente: {nomecliente}"
+        subject = f"Documentos do Serviço Jurídico - {marca} - Cliente: {nomecliente}"
+
+        # Adicionar observação se existir
+        observacao = objecao.get('observacao', '')
+        observacao_html = ""
+        if observacao:
+            observacao_html = f"<p><b>Observação:</b> {observacao}</p>"
 
         body_html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
-            <h3>Documentos da Objeção de Marca</h3>
+            <h3>Documentos do Serviço Jurídico</h3>
             <p><b>Marca:</b> {marca}</p>
             <p><b>Cliente:</b> {nomecliente}</p>
             <p><b>Serviço:</b> {objecao.get('servico', 'N/A')}</p>
             <p><b>Processos:</b><br>{processos_text}</p>
+            {observacao_html}
             <p>Os documentos estão anexados a este e-mail.</p>
         </div>
         """
@@ -305,7 +468,7 @@ class EmailAgent:
 
     def enviar_email_objecao_funcionario(self, destinatario: str, objecao: dict, anexos: list):
         """
-        Envia e-mail para funcionário com documentos da objeção.
+        Envia e-mail para funcionário com documentos do serviço jurídico.
         Usa destinatario_juridico se disponível, senão usa o destinatario fornecido.
         """
         # Verificar parâmetros
@@ -314,7 +477,8 @@ class EmailAgent:
             return False
 
         if not objecao:
-            st.error("Dados da objeção não fornecidos para e-mail do funcionário.")
+            st.error(
+                "Dados do serviço jurídico não fornecidos para e-mail do funcionário.")
             return False
 
         marca = objecao.get('marca', 'N/A')
@@ -333,15 +497,22 @@ class EmailAgent:
         processos_text = '<br>'.join(
             processos_info) if processos_info else 'N/A'
 
-        subject = f"Documentos da Objeção - {marca} - Cliente: {nomecliente}"
+        subject = f"Documentos do Serviço Jurídico - {marca} - Cliente: {nomecliente}"
+
+        # Adicionar observação se existir
+        observacao = objecao.get('observacao', '')
+        observacao_html = ""
+        if observacao:
+            observacao_html = f"<p><b>Observação:</b> {observacao}</p>"
 
         body_html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
-            <h3>Documentos da Objeção de Marca</h3>
+            <h3>Documentos do Serviço Jurídico</h3>
             <p><b>Marca:</b> {marca}</p>
             <p><b>Cliente:</b> {nomecliente}</p>
             <p><b>Serviço:</b> {objecao.get('servico', 'N/A')}</p>
             <p><b>Processos:</b><br>{processos_text}</p>
+            {observacao_html}
             <p>Os documentos estão anexados a este e-mail e foram enviados para o consultor responsável.</p>
         </div>
         """
@@ -396,67 +567,46 @@ class EmailAgent:
 
     def enviar_emails_objecao_completa(self, objecao: dict, anexos: list, supabase_agent):
         """
-        Envia e-mails para consultor e destinatário jurídico automaticamente.
+        Envia e-mail apenas para o funcionário que solicitou o serviço jurídico.
         Retorna lista de e-mails enviados com sucesso.
         """
         emails_enviados = []
 
         # Verificar se os parâmetros necessários estão presentes
         if not objecao:
-            st.error("Dados da objeção não fornecidos.")
+            st.error("Dados do serviço jurídico não fornecidos.")
             return emails_enviados
 
         if not supabase_agent:
             st.error("Supabase agent não fornecido.")
             return emails_enviados
 
-        # 1. Enviar e-mail para consultor
-        if objecao.get('email_consultor'):
-            try:
-                self.enviar_email_objecao_consultor(
-                    objecao['email_consultor'],
-                    objecao,
-                    anexos
-                )
-                emails_enviados.append(
-                    f"consultor ({objecao['email_consultor']})")
-            except Exception as e:
-                st.warning(f"Erro ao enviar e-mail para consultor: {str(e)}")
-        else:
-            st.warning("E-mail do consultor não encontrado na objeção.")
+        # Buscar e-mail do funcionário pelo juridico_id
+        juridico_id = objecao.get('juridico_id')
 
-        # 2. Enviar e-mail para destinatário jurídico
-        if self.destinatario_juridico and self.destinatario_juridico.strip():
+        if juridico_id:
             try:
-                self.enviar_email_objecao_funcionario(
-                    self.destinatario_juridico,
-                    objecao,
-                    anexos
-                )
-                emails_enviados.append(
-                    f"destinatário jurídico ({self.destinatario_juridico})")
+                # Buscar e-mail do funcionário no banco de dados
+                funcionario_email = supabase_agent.get_user_email_by_id(
+                    juridico_id)
+
+                if funcionario_email:
+                    resultado = self.enviar_email_objecao_funcionario(
+                        funcionario_email,
+                        objecao,
+                        anexos
+                    )
+
+                    if resultado:
+                        emails_enviados.append(
+                            f"funcionário ({funcionario_email})")
+                else:
+                    st.warning(
+                        f"E-mail do funcionário não encontrado para o ID: {juridico_id}")
             except Exception as e:
-                st.warning(
-                    f"Erro ao enviar e-mail para destinatário jurídico: {str(e)}")
+                st.warning(f"Erro ao enviar e-mail para funcionário: {str(e)}")
         else:
             st.warning(
-                "⚠️ Destinatário jurídico não configurado. E-mail não será enviado.")
-
-        # 3. Enviar e-mail para destinatário jurídico adicional
-        if self.destinatario_juridico_um and self.destinatario_juridico_um.strip():
-            try:
-                self.enviar_email_objecao_funcionario(
-                    self.destinatario_juridico_um,
-                    objecao,
-                    anexos
-                )
-                emails_enviados.append(
-                    f"destinatário jurídico adicional ({self.destinatario_juridico_um})")
-            except Exception as e:
-                st.warning(
-                    f"Erro ao enviar e-mail para destinatário jurídico adicional: {str(e)}")
-        else:
-            st.warning(
-                "⚠️ Destinatário jurídico adicional não configurado. E-mail não será enviado.")
+                "ID do funcionário não encontrado no serviço jurídico.")
 
         return emails_enviados

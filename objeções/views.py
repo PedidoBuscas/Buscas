@@ -12,7 +12,7 @@ class ObjecaoManager:
     # Status possíveis para as objeções
     STATUS_PENDENTE = "pendente"
     STATUS_RECEBIDO = "recebido"
-    STATUS_EM_ANALISE = "em_analise"
+    STATUS_EM_EXECUCAO = "em_execucao"
     STATUS_CONCLUIDO = "concluido"
 
     def __init__(self, supabase_agent, email_agent):
@@ -42,7 +42,7 @@ class ObjecaoManager:
         Determina o status atual baseado em status_objecao persistente no banco.
         """
         status = objecao.get('status_objecao', self.STATUS_PENDENTE)
-        if status not in [self.STATUS_PENDENTE, self.STATUS_RECEBIDO, self.STATUS_EM_ANALISE, self.STATUS_CONCLUIDO]:
+        if status not in [self.STATUS_PENDENTE, self.STATUS_RECEBIDO, self.STATUS_EM_EXECUCAO, self.STATUS_CONCLUIDO]:
             return self.STATUS_PENDENTE
         return status
 
@@ -54,7 +54,7 @@ class ObjecaoManager:
         status_dict = {
             self.STATUS_PENDENTE: [],
             self.STATUS_RECEBIDO: [],
-            self.STATUS_EM_ANALISE: [],
+            self.STATUS_EM_EXECUCAO: [],
             self.STATUS_CONCLUIDO: []
         }
         for objecao in objecoes:
@@ -81,7 +81,7 @@ class ObjecaoManager:
                 filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
                 return filename
 
-            # Upload dos PDFs
+            # Upload dos arquivos
             pdf_urls = []
             for i, file in enumerate(uploaded_files):
                 try:
@@ -201,7 +201,7 @@ def limpar_formulario_objecao():
 
 
 def solicitar_objecao(email_agent):
-    """Página para solicitar nova objeção de marca"""
+    """Página para solicitar novo serviço jurídico"""
 
     # Verificação de segurança para email_agent
     if email_agent is None:
@@ -238,7 +238,8 @@ def solicitar_objecao(email_agent):
             "CONTRARRAZÃO E/OU MANIFESTAÇÃO AO RECURSO/NULIDADE",
             "MANIFESTAÇÃO SOBRE PARECER PROFERIDO EM GRAU DE RECURSO",
             "RECURSO CONTRA INDEFERIMENTO DE PEDIDO DE REGISTRO DE MARCA",
-            "NOTIFICAÇÃO EXTRAJUDICIAL"
+            "NOTIFICAÇÃO EXTRAJUDICIAL",
+            "ELABORAÇÃO DE CONTRATO"
         ]
 
     # Inicializar dados do formulário
@@ -339,10 +340,11 @@ def solicitar_objecao(email_agent):
                 st.error("Preencha o número do processo, classe e contrato.")
 
         # 4. Upload de documentos (dentro do form)
-        st.subheader("PDFs da Objeção")
+        st.subheader("Documentos da Objeção")
         uploaded_files = st.file_uploader(
-            "Adicionar documentos (PDF)",
-            type=['pdf'],
+            "Adicionar documentos",
+            type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
+                  'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
             accept_multiple_files=True,
             key=f"upload_docs_{st.session_state.form_key}"
         )
@@ -498,7 +500,7 @@ def solicitar_objecao(email_agent):
                 # Limpar formulário após envio bem-sucedido
                 limpar_formulario_objecao()
                 st.success(
-                    "✅ Formulário limpo! Você pode criar uma nova objeção.")
+                    "✅ Formulário limpo! Você pode criar um novo serviço jurídico.")
                 st.rerun()
             else:
                 st.error("Erro ao solicitar objeção!")
@@ -563,7 +565,7 @@ def minhas_objecoes(email_agent):
     tabs = st.tabs([
         f"⏳ Pendentes ({len(objecoes_por_status[objecao_manager.STATUS_PENDENTE])})",
         f"📥 Recebidas ({len(objecoes_por_status[objecao_manager.STATUS_RECEBIDO])})",
-        f"🔍 Em Análise ({len(objecoes_por_status[objecao_manager.STATUS_EM_ANALISE])})",
+        f"🔍 Em Execução ({len(objecoes_por_status[objecao_manager.STATUS_EM_EXECUCAO])})",
         f"✅ Concluídas ({len(objecoes_por_status[objecao_manager.STATUS_CONCLUIDO])})"
     ])
 
@@ -571,7 +573,7 @@ def minhas_objecoes(email_agent):
     status_list = [
         objecao_manager.STATUS_PENDENTE,
         objecao_manager.STATUS_RECEBIDO,
-        objecao_manager.STATUS_EM_ANALISE,
+        objecao_manager.STATUS_EM_EXECUCAO,
         objecao_manager.STATUS_CONCLUIDO
     ]
 
@@ -667,51 +669,54 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
             # Botões para avançar para o próximo status (sempre na coluna 1)
             if status_atual == objecao_manager.STATUS_PENDENTE:
                 if st.button("📥 Recebida", key=f"btn_recebida_{objecao['id']}"):
-                    objecao_manager.atualizar_status_objecao(
-                        objecao['id'], objecao_manager.STATUS_RECEBIDO)
-                    st.rerun()
+                    if objecao_manager.atualizar_status_objecao(
+                            objecao['id'], objecao_manager.STATUS_RECEBIDO):
+                        st.success("✅ Status alterado para 'Recebida'!")
+                        st.rerun()
 
             elif status_atual == objecao_manager.STATUS_RECEBIDO:
-                if st.button("🔍 Em Análise", key=f"btn_analise_{objecao['id']}"):
-                    objecao_manager.atualizar_status_objecao(
-                        objecao['id'], objecao_manager.STATUS_EM_ANALISE)
-                    st.rerun()
+                if st.button("🔍 Em Execução", key=f"btn_analise_{objecao['id']}"):
+                    if objecao_manager.atualizar_status_objecao(
+                            objecao['id'], objecao_manager.STATUS_EM_EXECUCAO):
+                        st.success("✅ Status alterado para 'Em Execução'!")
+                        st.rerun()
 
-            elif status_atual == objecao_manager.STATUS_EM_ANALISE:
+            elif status_atual == objecao_manager.STATUS_EM_EXECUCAO:
                 if st.button("✅ Concluída", key=f"btn_concluida_{objecao['id']}"):
-                    objecao_manager.atualizar_status_objecao(
-                        objecao['id'], objecao_manager.STATUS_CONCLUIDO)
-                    st.rerun()
+                    if objecao_manager.atualizar_status_objecao(
+                            objecao['id'], objecao_manager.STATUS_CONCLUIDO):
+                        st.success("✅ Status alterado para 'Concluída'!")
+                        st.rerun()
 
-                    # Exibir PDFs existentes
+                    # Exibir arquivos existentes
         st.subheader("📄 Documentos")
 
-        # Verificar se há PDFs em obejpdf (funcionários)
+        # Verificar se há arquivos em obejpdf (funcionários)
         if objecao.get('obejpdf'):
             try:
                 obejpdf_data = objecao['obejpdf']
                 if isinstance(obejpdf_data, dict) and obejpdf_data.get('pdf_urls'):
-                    st.write("**📎 Documentos enviados por funcionário:**")
+                    st.write("**📎 Arquivos enviados por funcionário:**")
                     for i, url in enumerate(obejpdf_data['pdf_urls']):
                         if url:
-                            st.markdown(f"[📎 Documento {i+1}]({url})")
+                            st.markdown(f"[📎 Arquivo {i+1}]({url})")
             except Exception as e:
-                st.warning(f"Erro ao carregar documentos: {str(e)}")
+                st.warning(f"Erro ao carregar arquivos: {str(e)}")
 
-        # Verificar se há PDFs em peticaopdf (advogados)
+        # Verificar se há arquivos em peticaopdf (advogados)
         if objecao.get('peticaopdf'):
             try:
                 peticaopdf_data = objecao['peticaopdf']
                 if isinstance(peticaopdf_data, dict) and peticaopdf_data.get('pdf_urls'):
-                    st.write("**📄 Petições enviadas por advogado:**")
+                    st.write("**📄 Arquivos enviados por advogado:**")
                     for i, url in enumerate(peticaopdf_data['pdf_urls']):
                         if url:
-                            st.markdown(f"[📄 Petição {i+1}]({url})")
+                            st.markdown(f"[📄 Arquivo {i+1}]({url})")
             except Exception as e:
-                st.warning(f"Erro ao carregar petições: {str(e)}")
+                st.warning(f"Erro ao carregar arquivos: {str(e)}")
 
-        # Upload de documentos (apenas quando status for "Em Análise")
-        if status_atual == objecao_manager.STATUS_EM_ANALISE:
+        # Upload de arquivos (apenas quando status for "Em Execução")
+        if status_atual == objecao_manager.STATUS_EM_EXECUCAO:
             # Determinar tipo de usuário
             from permission_manager import CargoPermissionManager
             from app import get_user_id
@@ -728,57 +733,69 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
             # Apenas usuários jurídicos podem fazer upload
             if cargo_info['tipo'] != 'juridico':
                 st.info(
-                    "Apenas usuários jurídicos (advogados/funcionários) podem fazer upload de documentos.")
+                    "Apenas usuários jurídicos (advogados/funcionários) podem fazer upload de arquivos.")
             elif is_advogado:
                 st.subheader("📄 Petições")
-                uploaded_files = st.file_uploader(
-                    "Adicionar petições (PDF)",
-                    type=['pdf'],
-                    accept_multiple_files=True,
-                    key=f"upload_peticoes_{objecao['id']}"
-                )
 
-                if uploaded_files and st.button("Enviar Petições", key=f"btn_upload_peticoes_{objecao['id']}"):
-                    with st.spinner("Enviando petições e notificando por e-mail..."):
-                        if objecao_manager.enviar_documentos_objecao(
-                                objecao, uploaded_files, tipo_usuario="advogado"):
-                            st.success(
-                                "📄 Petições enviadas com sucesso! E-mails enviados para consultor e funcionário.")
+                # Usar form para evitar recarregamento automático
+                with st.form(key=f"upload_form_peticoes_{objecao['id']}"):
+                    uploaded_files = st.file_uploader(
+                        "Adicionar petições",
+                        type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
+                              'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
+                        accept_multiple_files=True,
+                        key=f"upload_peticoes_{objecao['id']}"
+                    )
 
-                            # Alterar status automaticamente para "Concluído" quando advogado envia petições
-                            try:
-                                objecao_manager.atualizar_status_objecao(
-                                    objecao['id'], objecao_manager.STATUS_CONCLUIDO)
+                    submit_button = st.form_submit_button("Enviar Arquivos")
+
+                    if submit_button and uploaded_files:
+                        with st.spinner("Enviando arquivos e notificando por e-mail..."):
+                            if objecao_manager.enviar_documentos_objecao(
+                                    objecao, uploaded_files, tipo_usuario="advogado"):
                                 st.success(
-                                    "✅ Status automaticamente alterado para 'Concluído'!")
-                            except Exception as e:
-                                st.warning(
-                                    f"Petições enviadas, mas erro ao alterar status: {str(e)}")
+                                    "📄 Arquivos enviados com sucesso! E-mails enviados para consultor e funcionário.")
 
-                            st.rerun()
-                        else:
-                            st.error(
-                                "Erro ao enviar petições. Verifique os logs.")
+                                # Alterar status automaticamente para "Concluída" quando advogado envia petições
+                                try:
+                                    objecao_manager.atualizar_status_objecao(
+                                        objecao['id'], objecao_manager.STATUS_CONCLUIDO)
+                                    st.success(
+                                        "✅ Status automaticamente alterado para 'Concluída'!")
+                                except Exception as e:
+                                    st.warning(
+                                        f"Petições enviadas, mas erro ao alterar status: {str(e)}")
+
+                                st.rerun()
+                            else:
+                                st.error(
+                                    "Erro ao enviar arquivos. Verifique os logs.")
 
             elif is_funcionario:
                 st.subheader("📎 Documentos")
-                uploaded_files = st.file_uploader(
-                    "Adicionar documentos (PDF)",
-                    type=['pdf'],
-                    accept_multiple_files=True,
-                    key=f"upload_docs_{objecao['id']}"
-                )
 
-                if uploaded_files and st.button("Enviar Documentos", key=f"btn_upload_docs_{objecao['id']}"):
-                    with st.spinner("Enviando documentos e notificando por e-mail..."):
-                        if objecao_manager.enviar_documentos_objecao(
-                                objecao, uploaded_files, tipo_usuario="funcionario"):
-                            st.success(
-                                "📎 Documentos enviados com sucesso! E-mails enviados para consultor e funcionário.")
-                            st.rerun()
-                        else:
-                            st.error(
-                                "Erro ao enviar documentos. Verifique os logs.")
+                # Usar form para evitar recarregamento automático
+                with st.form(key=f"upload_form_{objecao['id']}"):
+                    uploaded_files = st.file_uploader(
+                        "Adicionar documentos",
+                        type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
+                              'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
+                        accept_multiple_files=True,
+                        key=f"upload_docs_{objecao['id']}"
+                    )
+
+                    submit_button = st.form_submit_button("Enviar Arquivos")
+
+                    if submit_button and uploaded_files:
+                        with st.spinner("Enviando arquivos e notificando por e-mail..."):
+                            if objecao_manager.enviar_documentos_objecao(
+                                    objecao, uploaded_files, tipo_usuario="funcionario"):
+                                st.success(
+                                    "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e funcionário.")
+                                st.rerun()
+                            else:
+                                st.error(
+                                    "Erro ao enviar arquivos. Verifique os logs.")
 
 
 def formatar_data_br(data_iso):
