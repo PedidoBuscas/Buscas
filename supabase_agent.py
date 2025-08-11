@@ -561,6 +561,45 @@ class SupabaseAgent:
             st.error(f"Erro ao buscar usuários jurídicos admin: {str(e)}")
             return []
 
+    def get_juridicos_por_cargo(self, cargo: str):
+        """
+        Busca todos os usuários da tabela juridico_marca por cargo específico.
+        Args:
+            cargo (str): Cargo a ser buscado (ex: 'aprov_teor')
+        Returns:
+            list: Lista de usuários jurídicos com o cargo especificado
+        """
+        try:
+            import requests
+
+            jwt_token = getattr(st.session_state, 'jwt_token', None)
+
+            if jwt_token:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Content-Type": "application/json"
+                }
+            else:
+                headers = {
+                    "apikey": os.getenv("SUPABASE_KEY"),
+                    "Content-Type": "application/json"
+                }
+
+            url = f"{os.getenv('SUPABASE_URL')}/rest/v1/juridico_marca?cargo=eq.{cargo}"
+            resp = requests.get(url, headers=headers)
+
+            if resp.status_code == 200:
+                return resp.json() if resp.json() else []
+            else:
+                st.warning(
+                    f"Erro ao buscar usuários jurídicos por cargo: {resp.text}")
+                return []
+
+        except Exception as e:
+            st.error(f"Erro ao buscar usuários jurídicos por cargo: {str(e)}")
+            return []
+
     def get_all_consultores(self):
         resp = self.client.table('perfil').select('*').execute()
         return resp.data if resp.data else []

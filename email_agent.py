@@ -135,18 +135,21 @@ class EmailAgent:
             # Adicionar anexos
             for anexo in anexos:
                 if isinstance(anexo, dict) and 'content' in anexo and 'filename' in anexo:
+                    maintype, subtype = self._detectar_tipo_mime(
+                        anexo['filename'])
                     msg.add_attachment(
                         anexo['content'],
-                        maintype="application",
-                        subtype="pdf",
+                        maintype=maintype,
+                        subtype=subtype,
                         filename=anexo['filename']
                     )
                 elif isinstance(anexo, tuple) and len(anexo) == 2:
                     # Formato (bytes, filename)
+                    maintype, subtype = self._detectar_tipo_mime(anexo[1])
                     msg.add_attachment(
                         anexo[0],
-                        maintype="application",
-                        subtype="pdf",
+                        maintype=maintype,
+                        subtype=subtype,
                         filename=anexo[1]
                     )
 
@@ -207,10 +210,11 @@ class EmailAgent:
         msg["From"] = self.smtp_user
         msg["To"] = destinatario
         msg.set_content(corpo, subtype='html')
-        # Anexar PDF apenas se fornecido
+        # Anexar arquivo apenas se fornecido
         if anexo_bytes is not None and nome_arquivo is not None:
-            msg.add_attachment(anexo_bytes, maintype="application",
-                               subtype="pdf", filename=nome_arquivo)
+            maintype, subtype = self._detectar_tipo_mime(nome_arquivo)
+            msg.add_attachment(anexo_bytes, maintype=maintype,
+                               subtype=subtype, filename=nome_arquivo)
         try:
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()
@@ -232,8 +236,9 @@ class EmailAgent:
         msg["To"] = destinatario
         msg.set_content(corpo, subtype='html')
         for anexo_bytes, nome_arquivo in anexos:
-            msg.add_attachment(anexo_bytes, maintype="application",
-                               subtype="pdf", filename=nome_arquivo)
+            maintype, subtype = self._detectar_tipo_mime(nome_arquivo)
+            msg.add_attachment(anexo_bytes, maintype=maintype,
+                               subtype=subtype, filename=nome_arquivo)
         try:
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()
@@ -248,6 +253,31 @@ class EmailAgent:
         # Remove espaços duplos
         texto = re.sub(r' +', ' ', texto)
         return texto
+
+    def _detectar_tipo_mime(self, filename):
+        """
+        Detecta o tipo MIME baseado na extensão do arquivo.
+        """
+        filename = filename.lower()
+        if filename.endswith('.pdf'):
+            return "application", "pdf"
+        elif filename.endswith('.docx'):
+            return "application", "vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif filename.endswith('.doc'):
+            return "application", "msword"
+        elif filename.endswith('.xlsx'):
+            return "application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif filename.endswith('.xls'):
+            return "application", "vnd.ms-excel"
+        elif filename.endswith('.pptx'):
+            return "application", "vnd.openxmlformats-officedocument.presentationml.presentation"
+        elif filename.endswith('.ppt'):
+            return "application", "vnd.ms-powerpoint"
+        elif filename.endswith('.txt'):
+            return "text", "plain"
+        else:
+            # Padrão para outros tipos de arquivo
+            return "application", "octet-stream"
 
     def _format_body_html(self, form_data):
         """
@@ -432,10 +462,12 @@ class EmailAgent:
         if anexos:
             for anexo in anexos:
                 if isinstance(anexo, dict) and 'content' in anexo and 'filename' in anexo:
+                    maintype, subtype = self._detectar_tipo_mime(
+                        anexo['filename'])
                     msg.add_attachment(
                         anexo['content'],
-                        maintype="application",
-                        subtype="pdf",
+                        maintype=maintype,
+                        subtype=subtype,
                         filename=anexo['filename']
                     )
                 else:
@@ -466,7 +498,7 @@ class EmailAgent:
             logging.error(f"Erro ao enviar e-mail com documentos: {e}")
             return False
 
-    def enviar_email_objecao_funcionario(self, destinatario: str, objecao: dict, anexos: list):
+    def enviar_email_objecao_funcionario(self, destinatario: str, objecao: dict, anexos: list, supabase_agent):
         """
         Envia e-mail para funcionário com documentos do serviço jurídico.
         Usa destinatario_juridico se disponível, senão usa o destinatario fornecido.
@@ -483,6 +515,16 @@ class EmailAgent:
 
         marca = objecao.get('marca', 'N/A')
         nomecliente = objecao.get('nomecliente', 'N/A')
+
+        # Buscar nome do consultor
+        consultor_nome = "N/A"
+        try:
+            consultor_id = objecao.get('consultor_objecao')
+            if consultor_id:
+                consultor_nome = supabase_agent.get_consultor_name_by_id(
+                    consultor_id, st.session_state.get('jwt_token', ''))
+        except Exception as e:
+            st.warning(f"Erro ao buscar nome do consultor: {str(e)}")
 
         # Processos e contratos
         processo_list = objecao.get('processo', [])
@@ -511,9 +553,10 @@ class EmailAgent:
             <p><b>Marca:</b> {marca}</p>
             <p><b>Cliente:</b> {nomecliente}</p>
             <p><b>Serviço:</b> {objecao.get('servico', 'N/A')}</p>
+            <p><b>Consultor Responsável:</b> {consultor_nome}</p>
             <p><b>Processos:</b><br>{processos_text}</p>
             {observacao_html}
-            <p>Os documentos estão anexados a este e-mail e foram enviados para o consultor responsável.</p>
+            <p>Os documentos estão anexados a este e-mail.</p>
         </div>
         """
 
@@ -531,10 +574,12 @@ class EmailAgent:
         if anexos:
             for anexo in anexos:
                 if isinstance(anexo, dict) and 'content' in anexo and 'filename' in anexo:
+                    maintype, subtype = self._detectar_tipo_mime(
+                        anexo['filename'])
                     msg.add_attachment(
                         anexo['content'],
-                        maintype="application",
-                        subtype="pdf",
+                        maintype=maintype,
+                        subtype=subtype,
                         filename=anexo['filename']
                     )
                 else:
@@ -547,6 +592,11 @@ class EmailAgent:
                 server.send_message(msg)
             st.success(
                 f"E-mail com documentos enviado com sucesso para: {email_destino}")
+
+            # Aviso específico para o jurídico
+            st.info(
+                "📧 **Notificação enviada ao funcionário responsável.** Os destinatários foram notificados sobre os documentos enviados.")
+
             return True
         except smtplib.SMTPAuthenticationError as e:
             st.error(f"Erro de autenticação SMTP: {e}")
@@ -567,7 +617,7 @@ class EmailAgent:
 
     def enviar_emails_objecao_completa(self, objecao: dict, anexos: list, supabase_agent):
         """
-        Envia e-mail apenas para o funcionário que solicitou o serviço jurídico.
+        Envia e-mails para consultor, destinatário jurídico e destinatário jurídico adicional.
         Retorna lista de e-mails enviados com sucesso.
         """
         emails_enviados = []
@@ -581,32 +631,195 @@ class EmailAgent:
             st.error("Supabase agent não fornecido.")
             return emails_enviados
 
-        # Buscar e-mail do funcionário pelo juridico_id
-        juridico_id = objecao.get('juridico_id')
-
-        if juridico_id:
+        # 1. Enviar e-mail para o consultor responsável
+        consultor_id = objecao.get('consultor_objecao')
+        if consultor_id:
             try:
-                # Buscar e-mail do funcionário no banco de dados
-                funcionario_email = supabase_agent.get_user_email_by_id(
-                    juridico_id)
+                # Buscar e-mail do consultor no banco de dados
+                jwt_token = st.session_state.get('jwt_token', '')
+                consultor_email = supabase_agent.get_consultor_email_by_id(
+                    consultor_id, jwt_token)
 
-                if funcionario_email:
-                    resultado = self.enviar_email_objecao_funcionario(
-                        funcionario_email,
+                if consultor_email and consultor_email != 'N/A':
+                    resultado = self.enviar_email_objecao_consultor(
+                        consultor_email,
                         objecao,
                         anexos
                     )
 
                     if resultado:
                         emails_enviados.append(
-                            f"funcionário ({funcionario_email})")
+                            f"consultor ({consultor_email})")
                 else:
                     st.warning(
-                        f"E-mail do funcionário não encontrado para o ID: {juridico_id}")
+                        f"E-mail do consultor não encontrado para o ID: {consultor_id}")
             except Exception as e:
-                st.warning(f"Erro ao enviar e-mail para funcionário: {str(e)}")
+                st.warning(f"Erro ao enviar e-mail para consultor: {str(e)}")
         else:
             st.warning(
-                "ID do funcionário não encontrado no serviço jurídico.")
+                "ID do consultor não encontrado no serviço jurídico.")
+
+        # 2. Enviar e-mail para destinatário jurídico
+        if self.destinatario_juridico:
+            try:
+                resultado = self.enviar_email_objecao_consultor(
+                    self.destinatario_juridico,
+                    objecao,
+                    anexos
+                )
+
+                if resultado:
+                    emails_enviados.append(
+                        f"destinatário jurídico ({self.destinatario_juridico})")
+            except Exception as e:
+                st.warning(
+                    f"Erro ao enviar e-mail para destinatário jurídico: {str(e)}")
+        else:
+            st.warning(
+                "⚠️ Destinatário jurídico não configurado. E-mail não será enviado.")
+
+        # 3. Enviar e-mail para destinatário jurídico adicional
+        if self.destinatario_juridico_um:
+            try:
+                resultado = self.enviar_email_objecao_consultor(
+                    self.destinatario_juridico_um,
+                    objecao,
+                    anexos
+                )
+
+                if resultado:
+                    emails_enviados.append(
+                        f"destinatário jurídico adicional ({self.destinatario_juridico_um})")
+            except Exception as e:
+                st.warning(
+                    f"Erro ao enviar e-mail para destinatário jurídico adicional: {str(e)}")
+        else:
+            st.warning(
+                "⚠️ Destinatário jurídico adicional não configurado. E-mail não será enviado.")
 
         return emails_enviados
+
+    def enviar_email_objecao_aprov_teor(self, destinatario: str, objecao: dict, anexos: list, supabase_agent):
+        """
+        Envia e-mail para aprova_teor com documentos do serviço jurídico.
+        Inclui informações do funcionário e consultor para aprovação.
+        """
+        # Verificar parâmetros
+        if not destinatario or not destinatario.strip():
+            st.error("Destinatário não fornecido para e-mail de aprova_teor.")
+            return False
+
+        if not objecao:
+            st.error(
+                "Dados do serviço jurídico não fornecidos para e-mail de aprova_teor.")
+            return False
+
+        marca = objecao.get('marca', 'N/A')
+        nomecliente = objecao.get('nomecliente', 'N/A')
+
+        # Processos e contratos
+        processo_list = objecao.get('processo', [])
+        ncontrato_list = objecao.get('ncontrato', [])
+
+        # Criar lista de processos com contratos
+        processos_info = []
+        for i, (processo, contrato) in enumerate(zip(processo_list, ncontrato_list), 1):
+            processos_info.append(
+                f"Processo {i}: {processo} - Contrato: {contrato}")
+
+        processos_text = '<br>'.join(
+            processos_info) if processos_info else 'N/A'
+
+        # Buscar informações do funcionário e consultor
+        funcionario_nome = "N/A"
+        funcionario_email = "N/A"
+        consultor_nome = "N/A"
+
+        try:
+            # Buscar nome e e-mail do funcionário
+            juridico_id = objecao.get('juridico_id')
+            if juridico_id:
+                funcionario_nome = supabase_agent.get_juridico_name_by_id(
+                    juridico_id, st.session_state.get('jwt_token', ''))
+                funcionario_email = supabase_agent.get_user_email_by_id(
+                    juridico_id)
+
+            # Buscar nome do consultor
+            consultor_id = objecao.get('consultor_objecao')
+            if consultor_id:
+                consultor_nome = supabase_agent.get_consultor_name_by_id(
+                    consultor_id, st.session_state.get('jwt_token', ''))
+        except Exception as e:
+            st.warning(f"Erro ao buscar informações adicionais: {str(e)}")
+
+        subject = f"Documentos para Aprovação de Teor - {marca} - Cliente: {nomecliente}"
+
+        # Adicionar observação se existir
+        observacao = objecao.get('observacao', '')
+        observacao_html = ""
+        if observacao:
+            observacao_html = f"<p><b>Observação:</b> {observacao}</p>"
+
+        body_html = f"""
+        <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
+            <h3>Documentos para Aprovação de Teor</h3>
+            <p><b>Marca:</b> {marca}</p>
+            <p><b>Cliente:</b> {nomecliente}</p>
+            <p><b>Serviço:</b> {objecao.get('servico', 'N/A')}</p>
+            <p><b>Processos:</b><br>{processos_text}</p>
+            {observacao_html}
+            <hr style='margin: 20px 0; border: 1px solid #ccc;'>
+            <h4>Informações para Aprovação:</h4>
+            <p><b>Funcionário Responsável:</b> {funcionario_nome}</p>
+            <p><b>E-mail do Funcionário:</b> {funcionario_email}</p>
+            <p><b>Consultor Responsável:</b> {consultor_nome}</p>
+            <p><b>Instruções:</b> Após revisar os documentos anexados, encaminhe o e-mail de aprovação para o funcionário responsável.</p>
+            <p>Os documentos estão anexados a este e-mail.</p>
+        </div>
+        """
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self.smtp_user
+        msg["To"] = destinatario
+        msg.set_content(body_html, subtype='html')
+
+        # Adicionar anexos se fornecidos
+        if anexos:
+            for anexo in anexos:
+                if isinstance(anexo, dict) and 'content' in anexo and 'filename' in anexo:
+                    maintype, subtype = self._detectar_tipo_mime(
+                        anexo['filename'])
+                    msg.add_attachment(
+                        anexo['content'],
+                        maintype=maintype,
+                        subtype=subtype,
+                        filename=anexo['filename']
+                    )
+                else:
+                    logging.warning(f"Anexo inválido ignorado: {anexo}")
+
+        try:
+            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.smtp_user, self.smtp_pass)
+                server.send_message(msg)
+            st.success(
+                f"E-mail para aprovação enviado com sucesso para: {destinatario}")
+            return True
+        except smtplib.SMTPAuthenticationError as e:
+            st.error(f"Erro de autenticação SMTP: {e}")
+            logging.error(f"Erro de autenticação SMTP: {e}")
+            return False
+        except smtplib.SMTPConnectError as e:
+            st.error(f"Erro de conexão SMTP: {e}")
+            logging.error(f"Erro de conexão SMTP: {e}")
+            return False
+        except smtplib.SMTPRecipientsRefused as e:
+            st.error(f"Destinatário recusado: {e}")
+            logging.error(f"Destinatário recusado: {e}")
+            return False
+        except Exception as e:
+            st.error(f"Erro ao enviar e-mail para aprovação: {e}")
+            logging.error(f"Erro ao enviar e-mail para aprovação: {e}")
+            return False

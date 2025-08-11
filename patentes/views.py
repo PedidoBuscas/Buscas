@@ -579,14 +579,6 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
             st.info(
                 "Você pode adicionar documentos complementares que serão enviados aos responsáveis.")
 
-            # Botão de teste para verificar permissões
-            if st.button("🧪 Testar Permissões", key=f"test_permissions_{patente['id']}"):
-                with st.spinner("Testando permissões..."):
-                    from supabase_agent import SupabaseAgent
-                    supabase_agent = SupabaseAgent()
-                    supabase_agent.test_patente_update_permissions(
-                        patente['id'], st.session_state.jwt_token)
-
             uploaded_files = st.file_uploader(
                 "Selecione os documentos",
                 type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",

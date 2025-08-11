@@ -150,9 +150,62 @@ class ObjecaoManager:
                     "content_type": "application/pdf"
                 })
 
-            # Usar o método específico do EmailAgent para enviar e-mails
-            emails_enviados = self.email_agent.enviar_emails_objecao_completa(
-                objecao, anexos, self.supabase_agent)
+            # Enviar e-mails baseado no tipo de usuário
+            emails_enviados = []
+
+            if tipo_usuario == "advogado":
+                # Advogados enviam e-mail para o funcionário e para aprov_teor
+                juridico_id = objecao.get('juridico_id')
+
+                # 1. Enviar para o funcionário responsável
+                if juridico_id:
+                    try:
+                        # Buscar e-mail do funcionário no banco de dados
+                        funcionario_email = self.supabase_agent.get_user_email_by_id(
+                            juridico_id)
+
+                        if funcionario_email and funcionario_email != 'N/A':
+                            resultado = self.email_agent.enviar_email_objecao_funcionario(
+                                funcionario_email, objecao, anexos, self.supabase_agent)
+
+                            if resultado:
+                                emails_enviados.append(
+                                    f"funcionário ({funcionario_email})")
+                        else:
+                            st.warning(
+                                f"E-mail do funcionário não encontrado para o ID: {juridico_id}")
+                    except Exception as e:
+                        st.warning(
+                            f"Erro ao enviar e-mail para funcionário: {str(e)}")
+                else:
+                    st.warning("ID do funcionário não encontrado na objeção.")
+
+                # 2. Enviar para usuários com cargo aprova_teor
+                try:
+                    juridicos_aprov_teor = self.supabase_agent.get_juridicos_por_cargo(
+                        'aprova_teor')
+
+                    if juridicos_aprov_teor:
+                        for juridico in juridicos_aprov_teor:
+                            email_aprov_teor = juridico.get('email')
+                            if email_aprov_teor and email_aprov_teor != 'N/A':
+                                resultado = self.email_agent.enviar_email_objecao_aprov_teor(
+                                    email_aprov_teor, objecao, anexos, self.supabase_agent)
+
+                                if resultado:
+                                    emails_enviados.append(
+                                        f"aprova_teor ({email_aprov_teor})")
+                    else:
+                        st.info(
+                            "Nenhum usuário com cargo 'aprova_teor' encontrado.")
+
+                except Exception as e:
+                    st.warning(
+                        f"Erro ao enviar e-mail para aprova_teor: {str(e)}")
+            else:
+                # Funcionários enviam e-mails para consultor e destinatários jurídicos
+                emails_enviados = self.email_agent.enviar_emails_objecao_completa(
+                    objecao, anexos, self.supabase_agent)
 
             # Notificar sobre e-mails enviados
             if emails_enviados:
@@ -165,6 +218,84 @@ class ObjecaoManager:
             # NOTA: Removida a alteração automática de status para "Concluído"
             # O status deve ser alterado manualmente pelo usuário quando apropriado
             # Uma objeção recém-criada deve permanecer como "pendente"
+
+            return True
+
+        except Exception as e:
+            st.error(f"Erro ao enviar documentos: {str(e)}")
+            return False
+
+    def enviar_documentos_objecao_sem_email(self, objecao: dict, uploaded_files: list, tipo_usuario: str = "funcionario") -> bool:
+        """
+        Envia documentos da objeção SEM enviar e-mails (apenas upload).
+        tipo_usuario: "funcionario" (obejpdf) ou "advogado" (peticaopdf)
+        """
+        try:
+            # Normalizar nome do arquivo
+            def normalize_filename(filename):
+                filename = unicodedata.normalize('NFKD', filename).encode(
+                    'ASCII', 'ignore').decode('ASCII')
+                filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+                return filename
+
+            # Upload dos arquivos
+            pdf_urls = []
+            for i, file in enumerate(uploaded_files):
+                try:
+                    file_name = normalize_filename(
+                        f"{objecao['id']}_{file.name}")
+
+                    # Verificar se o usuário tem permissão para upload
+                    from permission_manager import CargoPermissionManager
+                    from app import get_user_id
+
+                    permission_manager = CargoPermissionManager(
+                        st.session_state.supabase_agent)
+                    user_id = get_user_id(st.session_state.user)
+                    cargo_info = permission_manager.get_user_cargo_info(
+                        user_id)
+
+                    tipos_multiplos = cargo_info.get(
+                        'tipos_multiplos', [cargo_info['tipo']])
+                    pode_fazer_upload = 'juridico' in tipos_multiplos or cargo_info[
+                        'tipo'] == 'juridico'
+
+                    if not pode_fazer_upload:
+                        st.error(
+                            "Você precisa ser um usuário jurídico (advogado/funcionário) para fazer upload de documentos.")
+                        return False
+
+                    url = self.supabase_agent.upload_pdf_to_storage(
+                        file, file_name, st.session_state.jwt_token, bucket="obejecaopdf")
+                    pdf_urls.append(url)
+
+                except Exception as e:
+                    st.error(f"Erro ao fazer upload de {file.name}: {str(e)}")
+                    # Continuar com os outros arquivos mesmo se um falhar
+                    continue
+
+            # Verificar se pelo menos um arquivo foi enviado com sucesso
+            if not pdf_urls:
+                st.error(
+                    "Nenhum arquivo foi enviado com sucesso. Verifique os erros acima.")
+                return False
+
+            # Preparar dados dos documentos para salvar no Supabase
+            documentos_data = {
+                "pdf_urls": pdf_urls,
+                "data_envio": datetime.now().isoformat(),
+                "arquivos": [{"nome": file.name, "url": url} for file, url in zip(uploaded_files, pdf_urls)]
+            }
+
+            # Atualizar coluna correta baseado no tipo de usuário
+            if tipo_usuario == "advogado":
+                # Advogados salvam em peticaopdf
+                self.supabase_agent.update_objecao_peticaopdf(
+                    objecao['id'], documentos_data, st.session_state.jwt_token)
+            else:
+                # Funcionários salvam em obejpdf
+                self.supabase_agent.update_objecao_obejpdf(
+                    objecao['id'], documentos_data, st.session_state.jwt_token)
 
             return True
 
@@ -427,75 +558,104 @@ def solicitar_objecao(email_agent):
             if objecao_criada:
                 st.success("Solicitação sendo enviada!")
 
-                # Processar arquivos enviados se houver
+                # Preparar anexos se houver documentos
+                anexos = []
+                if uploaded_files:
+                    for file in uploaded_files:
+                        pdf_bytes = file.getvalue()
+                        anexos.append({
+                            "filename": file.name,
+                            "content": pdf_bytes,
+                            "content_type": "application/pdf"
+                        })
+
+                # Fluxo unificado: sempre enviar e-mails para consultor e destinatários jurídicos
+                emails_enviados = []
+
+                # 1. Enviar e-mail para consultor
+                if objecao_criada.get('email_consultor'):
+                    try:
+                        if anexos:
+                            # Se há anexos, usar método que suporta anexos
+                            email_agent.enviar_email_objecao_consultor(
+                                objecao_criada['email_consultor'], objecao_criada, anexos)
+                        else:
+                            # Se não há anexos, usar método simples
+                            email_agent.enviar_email_nova_objecao(
+                                objecao_criada['email_consultor'], objecao_criada)
+                        emails_enviados.append(
+                            f"consultor ({objecao_criada['email_consultor']})")
+                    except Exception as e:
+                        st.warning(
+                            f"Erro ao enviar e-mail para consultor: {str(e)}")
+                else:
+                    st.warning(
+                        "E-mail do consultor não encontrado na objeção criada")
+
+                # 2. Enviar e-mail para destinatário jurídico
+                if destinatario_juridico:
+                    try:
+                        if anexos:
+                            # Se há anexos, usar método que suporta anexos
+                            email_agent.enviar_email_objecao_consultor(
+                                destinatario_juridico, objecao_criada, anexos)
+                        else:
+                            # Se não há anexos, usar método simples
+                            email_agent.enviar_email_nova_objecao(
+                                destinatario_juridico, objecao_criada)
+                        emails_enviados.append(
+                            f"destinatário jurídico ({destinatario_juridico})")
+                    except Exception as e:
+                        st.warning(
+                            f"Erro ao enviar e-mail para destinatário jurídico: {str(e)}")
+                else:
+                    st.warning(
+                        f"⚠️ Destinatário jurídico não configurado. E-mail não será enviado.")
+
+                # 3. Enviar e-mail para destinatário jurídico adicional
+                destinatario_juridico_um = email_agent.destinatario_juridico_um
+                if destinatario_juridico_um:
+                    try:
+                        if anexos:
+                            # Se há anexos, usar método que suporta anexos
+                            email_agent.enviar_email_objecao_consultor(
+                                destinatario_juridico_um, objecao_criada, anexos)
+                        else:
+                            # Se não há anexos, usar método simples
+                            email_agent.enviar_email_nova_objecao(
+                                destinatario_juridico_um, objecao_criada)
+                        emails_enviados.append(
+                            f"destinatário jurídico adicional ({destinatario_juridico_um})")
+                    except Exception as e:
+                        st.warning(
+                            f"Erro ao enviar e-mail para destinatário jurídico adicional: {str(e)}")
+                else:
+                    st.warning(
+                        f"⚠️ Destinatário jurídico adicional não configurado. E-mail não será enviado.")
+
+                # Processar upload dos arquivos se houver (apenas para salvar no banco)
                 if uploaded_files:
                     # Verificar se é advogado ou funcionário
                     is_advogado = cargo_info['tipo'] == 'juridico' and cargo_info.get(
                         'cargo') == 'advogado'
                     tipo_usuario = "advogado" if is_advogado else "funcionario"
 
-                    # Processar os arquivos usando o ObjecaoManager
+                    # Processar os arquivos usando o ObjecaoManager (apenas upload, sem e-mail)
                     objecao_manager = ObjecaoManager(
                         st.session_state.supabase_agent, email_agent)
-                    if objecao_manager.enviar_documentos_objecao(objecao_criada, uploaded_files, tipo_usuario):
-                        pass  # Sucesso já foi notificado na função enviar_documentos_objecao
+                    if objecao_manager.enviar_documentos_objecao_sem_email(objecao_criada, uploaded_files, tipo_usuario):
+                        st.success("📄 Documentos salvos no sistema!")
                     else:
                         st.warning(
-                            "Objeção criada, mas houve erro ao enviar documentos.")
+                            "Objeção criada, mas houve erro ao salvar documentos.")
+
+                # Notificar sobre e-mails enviados
+                if emails_enviados:
+                    st.success(
+                        f"📧 E-mails de notificação enviados para: {', '.join(emails_enviados)}")
                 else:
-                    # Enviar e-mails de notificação apenas quando NÃO há documentos
-                    emails_enviados = []
-
-                    # 1. Enviar e-mail para consultor
-                    if objecao_criada.get('email_consultor'):
-                        try:
-                            email_agent.enviar_email_nova_objecao(
-                                objecao_criada['email_consultor'], objecao_criada)
-                            emails_enviados.append(
-                                f"consultor ({objecao_criada['email_consultor']})")
-                        except Exception as e:
-                            st.warning(
-                                f"Erro ao enviar e-mail para consultor: {str(e)}")
-                    else:
-                        st.warning(
-                            "E-mail do consultor não encontrado na objeção criada")
-
-                    # 2. Enviar e-mail para destinatário jurídico
-                    if destinatario_juridico:
-                        try:
-                            email_agent.enviar_email_nova_objecao(
-                                destinatario_juridico, objecao_criada)
-                            emails_enviados.append(
-                                f"destinatário jurídico ({destinatario_juridico})")
-                        except Exception as e:
-                            st.warning(
-                                f"Erro ao enviar e-mail para destinatário jurídico: {str(e)}")
-                    else:
-                        st.warning(
-                            f"⚠️ Destinatário jurídico não configurado. E-mail não será enviado.")
-
-                    # 3. Enviar e-mail para destinatário jurídico adicional
-                    destinatario_juridico_um = email_agent.destinatario_juridico_um
-                    if destinatario_juridico_um:
-                        try:
-                            email_agent.enviar_email_nova_objecao(
-                                destinatario_juridico_um, objecao_criada)
-                            emails_enviados.append(
-                                f"destinatário jurídico adicional ({destinatario_juridico_um})")
-                        except Exception as e:
-                            st.warning(
-                                f"Erro ao enviar e-mail para destinatário jurídico adicional: {str(e)}")
-                    else:
-                        st.warning(
-                            f"⚠️ Destinatário jurídico adicional não configurado. E-mail não será enviado.")
-
-                    # Notificar sobre e-mails enviados
-                    if emails_enviados:
-                        st.success(
-                            f"📧 E-mails de notificação enviados para: {', '.join(emails_enviados)}")
-                    else:
-                        st.warning(
-                            "⚠️ Nenhum e-mail de notificação foi enviado.")
+                    st.warning(
+                        "⚠️ Nenhum e-mail de notificação foi enviado.")
 
                 # Limpar formulário após envio bem-sucedido
                 limpar_formulario_objecao()
@@ -754,7 +914,7 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
                             if objecao_manager.enviar_documentos_objecao(
                                     objecao, uploaded_files, tipo_usuario="advogado"):
                                 st.success(
-                                    "📄 Arquivos enviados com sucesso! E-mails enviados para consultor e funcionário.")
+                                    "📄 Arquivos enviados com sucesso! E-mails enviados para funcionário e aprova_teor")
 
                                 # Alterar status automaticamente para "Concluída" quando advogado envia petições
                                 try:
@@ -791,7 +951,7 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
                             if objecao_manager.enviar_documentos_objecao(
                                     objecao, uploaded_files, tipo_usuario="funcionario"):
                                 st.success(
-                                    "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e funcionário.")
+                                    "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e destinatários jurídicos.")
                                 st.rerun()
                             else:
                                 st.error(
