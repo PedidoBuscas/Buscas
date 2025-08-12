@@ -1,6 +1,6 @@
 import streamlit as st
 from supabase_agent import SupabaseAgent
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 # Definição dos cargos e suas permissões
@@ -71,6 +71,18 @@ class CargoPermissionManager:
         Retorna informações completas do cargo do usuário.
         Verifica todas as tabelas e combina permissões quando usuário está em múltiplas tabelas.
         """
+        # Validação de entrada
+        if not user_id or not isinstance(user_id, str):
+            return {
+                'tipo': 'consultor',
+                'cargo': 'consultor',
+                'is_admin': False,
+                'dados': None,
+                'nome': 'Usuário Inválido',
+                'email': '',
+                'tipos_multiplos': []
+            }
+
         # Verificar em todas as tabelas
         juridico = self.supabase_agent.get_juridico_by_id(user_id)
         funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
@@ -130,15 +142,18 @@ class CargoPermissionManager:
             cargo = perfil.get('cargo', 'consultor')
             dados = perfil
 
-        return {
+        # Validação final dos dados retornados
+        result = {
             'tipo': tipo_principal,
             'cargo': cargo,
-            'is_admin': is_admin,
+            'is_admin': bool(is_admin),  # Garantir que é boolean
             'dados': dados,
-            'nome': nome,
-            'email': email,
-            'tipos_multiplos': tipos_encontrados
+            'nome': str(nome) if nome else 'Usuário',
+            'email': str(email) if email else '',
+            'tipos_multiplos': list(tipos_encontrados)
         }
+
+        return result
 
     def has_permission(self, user_id: str, permission: str) -> bool:
         """
@@ -157,26 +172,31 @@ class CargoPermissionManager:
             'tipos_multiplos', [cargo_info['tipo']])
         is_admin = cargo_info['is_admin']
 
-        # Se é admin (exatamente True), tem acesso total
-        if is_admin is True:
+        # Se é admin, tem acesso total
+        if is_admin:
             return True
 
         # Combinar permissões de todas as tabelas onde o usuário está presente
         all_permissions = set()
 
+        # Buscar dados específicos de cada tabela para obter o cargo correto
+        juridico = self.supabase_agent.get_juridico_by_id(user_id)
+        funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
+        perfil = self.supabase_agent.get_profile(user_id)
+
         for tipo in tipos_multiplos:
-            if tipo == 'juridico':
-                cargo = cargo_info['cargo']
+            if tipo == 'juridico' and juridico:
+                cargo = juridico.get('cargo', 'advogado')
                 permissions = self.cargos_juridico.get(
                     cargo, {}).get('permissions', [])
                 all_permissions.update(permissions)
-            elif tipo == 'funcionario':
-                cargo = cargo_info['cargo']
+            elif tipo == 'funcionario' and funcionario:
+                cargo = funcionario.get('cargo_func', 'funcionario')
                 permissions = self.cargos_funcionario.get(
                     cargo, {}).get('permissions', [])
                 all_permissions.update(permissions)
-            elif tipo == 'consultor':
-                cargo = cargo_info['cargo']
+            elif tipo == 'consultor' and perfil:
+                cargo = perfil.get('cargo', 'consultor')
                 permissions = self.cargos_consultor.get(
                     cargo, {}).get('permissions', [])
                 all_permissions.update(permissions)
@@ -201,19 +221,24 @@ class CargoPermissionManager:
         # Combinar itens de menu de todas as tabelas
         menu_items = set()
 
+        # Buscar dados específicos de cada tabela para obter o cargo correto
+        juridico = self.supabase_agent.get_juridico_by_id(user_id)
+        funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
+        perfil = self.supabase_agent.get_profile(user_id)
+
         for tipo in tipos_multiplos:
-            if tipo == 'juridico':
-                cargo = cargo_info['cargo']
+            if tipo == 'juridico' and juridico:
+                cargo = juridico.get('cargo', 'advogado')
                 items = self.cargos_juridico.get(
                     cargo, {}).get('menu_items', [])
                 menu_items.update(items)
-            elif tipo == 'funcionario':
-                cargo = cargo_info['cargo']
+            elif tipo == 'funcionario' and funcionario:
+                cargo = funcionario.get('cargo_func', 'funcionario')
                 items = self.cargos_funcionario.get(
                     cargo, {}).get('menu_items', [])
                 menu_items.update(items)
-            elif tipo == 'consultor':
-                cargo = cargo_info['cargo']
+            elif tipo == 'consultor' and perfil:
+                cargo = perfil.get('cargo', 'consultor')
                 items = self.cargos_consultor.get(
                     cargo, {}).get('menu_items', [])
                 menu_items.update(items)
@@ -328,6 +353,6 @@ class CargoPermissionManager:
         if page_name == "Relatório de Custos":
             cargo_info = self.get_user_cargo_info(user_id)
             # Permitir se é admin ou se tem cargo financeiro
-            return cargo_info['is_admin'] is True or cargo_info['cargo'] == 'financeiro'
+            return cargo_info['is_admin'] or cargo_info['cargo'] == 'financeiro'
 
         return self.has_permission(user_id, required_permission)

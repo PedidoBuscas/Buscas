@@ -921,13 +921,37 @@ def limpar_session_state():
     # Limpar cache
     st.cache_data.clear()
 
+    # Limpar cache específico do usuário se existir
+    current_user_id = st.session_state.get('current_user_id', None)
+    if current_user_id:
+        cache_key = f"user_permissions_{current_user_id}"
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+
     # Limpar session_state
     keys_to_clear = [
         'user', 'jwt_token', 'consultor_nome', 'consultor_email',
         'classificador_inpi', 'enviando_pedido', 'sucesso',
-        'form_nonce', 'marcas', 'supabase_agent', 'email_agent'
+        'form_nonce', 'marcas', 'supabase_agent', 'email_agent',
+        'current_user_id'
     ]
 
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
+
+
+def limpar_cache_completo():
+    """Limpa todo o cache e session_state de forma mais agressiva"""
+    try:
+        # Limpar todos os caches
+        st.cache_data.clear()
+        st.cache_resource.clear()
+
+        # Limpar session_state
+        limpar_session_state()
+
+        return True
+    except Exception as e:
+
+        return False

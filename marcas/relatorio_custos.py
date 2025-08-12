@@ -110,8 +110,7 @@ class RelatorioCustos:
                 # Usar a mesma lógica robusta de formatação de data
                 from marcas.views import formatar_mes_ano_cached
                 mes_ano = formatar_mes_ano_cached(busca.get('created_at', ''))
-            except Exception as e:
-                print(f"Erro ao formatar data: {e}")
+            except Exception:
                 mes_ano = "Data não disponível"
 
             if consultor not in custos_por_consultor_mes:
@@ -306,9 +305,7 @@ class RelatorioCustos:
                                             busca['data'].replace('Z', '+00:00'))
                                         data_formatada = data_busca.strftime(
                                             '%d/%m/%Y %H:%M')
-                                    except Exception as e:
-                                        print(
-                                            f"Erro ao formatar data para exibição: {e}")
+                                    except Exception:
                                         # Se falhar, usar a data original
                                         data_formatada = busca['data']
 
@@ -690,7 +687,6 @@ def relatorio_custos(busca_manager, is_admin: bool = False, user_id: str = None)
         st.info("💡 Tente novamente ou entre em contato com o suporte.")
         st.info("🔄 Se o problema persistir, tente recarregar a página.")
 
-        # Log do erro para debug
         import logging
         logging.error(f"Erro no relatório de custos: {str(e)}")
 

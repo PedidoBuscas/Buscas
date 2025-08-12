@@ -53,11 +53,7 @@ def formatar_mes_ano(data_str):
     """Formata a data para exibição de mês/ano"""
     try:
         if not data_str:
-            print(f"DEBUG: Data vazia ou None")
             return "Data não disponível"
-
-        print(
-            f"DEBUG: Tentando formatar data: '{data_str}' (tipo: {type(data_str)})")
 
         # Mapeamento de meses em português
         meses_pt = {
@@ -74,36 +70,28 @@ def formatar_mes_ano(data_str):
             # Formato ISO com timezone
             if data_str.endswith('Z'):
                 data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
-                print(f"DEBUG: Parseado como ISO com timezone")
             else:
                 # Formato ISO sem timezone
                 data = datetime.fromisoformat(data_str)
-                print(f"DEBUG: Parseado como ISO sem timezone")
-        except ValueError as e1:
-            print(f"DEBUG: Erro ISO: {e1}")
+        except ValueError:
             try:
                 # Formato ISO sem timezone (removendo Z se existir)
                 data = datetime.fromisoformat(data_str.replace('Z', ''))
-                print(f"DEBUG: Parseado como ISO sem Z")
-            except ValueError as e2:
-                print(f"DEBUG: Erro ISO sem Z: {e2}")
+            except ValueError:
                 try:
                     # Formato brasileiro DD/MM/YYYY
                     if '/' in data_str and len(data_str.split('/')) == 3:
                         dia, mes, ano = data_str.split('/')
                         data = datetime(int(ano), int(mes), int(dia))
-                        print(f"DEBUG: Parseado como formato brasileiro")
                     else:
                         # Tentar outros formatos comuns
                         for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
                             try:
                                 data = datetime.strptime(data_str, fmt)
-                                print(f"DEBUG: Parseado com formato: {fmt}")
                                 break
                             except ValueError:
                                 continue
-                except Exception as e3:
-                    print(f"DEBUG: Erro formato brasileiro: {e3}")
+                except Exception:
                     pass
 
         if data:
@@ -111,14 +99,11 @@ def formatar_mes_ano(data_str):
             mes_en, ano = mes_ano_en.split('/')
             mes_pt = meses_pt.get(mes_en, mes_en)
             resultado = f"{mes_pt}/{ano}"
-            print(f"DEBUG: Resultado final: {resultado}")
             return resultado
         else:
-            print(f"DEBUG: Não foi possível parsear a data, tentando fallback")
             return formatar_mes_ano_fallback(data_str)
 
-    except Exception as e:
-        print(f"DEBUG: Erro geral ao formatar data '{data_str}': {e}")
+    except Exception:
         return formatar_mes_ano_fallback(data_str)
 
 

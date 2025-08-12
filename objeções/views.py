@@ -95,13 +95,11 @@ class ObjecaoManager:
                     permission_manager = CargoPermissionManager(
                         st.session_state.supabase_agent)
                     user_id = get_user_id(st.session_state.user)
-                    cargo_info = permission_manager.get_user_cargo_info(
-                        user_id)
 
-                    tipos_multiplos = cargo_info.get(
-                        'tipos_multiplos', [cargo_info['tipo']])
-                    pode_fazer_upload = 'juridico' in tipos_multiplos or cargo_info[
-                        'tipo'] == 'juridico'
+                    # Verificar se é usuário jurídico (APENAS na tabela juridico)
+                    juridico = st.session_state.supabase_agent.get_juridico_by_id(
+                        user_id)
+                    pode_fazer_upload = juridico is not None
 
                     if not pode_fazer_upload:
                         st.error(
@@ -252,13 +250,11 @@ class ObjecaoManager:
                     permission_manager = CargoPermissionManager(
                         st.session_state.supabase_agent)
                     user_id = get_user_id(st.session_state.user)
-                    cargo_info = permission_manager.get_user_cargo_info(
-                        user_id)
 
-                    tipos_multiplos = cargo_info.get(
-                        'tipos_multiplos', [cargo_info['tipo']])
-                    pode_fazer_upload = 'juridico' in tipos_multiplos or cargo_info[
-                        'tipo'] == 'juridico'
+                    # Verificar se é usuário jurídico (APENAS na tabela juridico)
+                    juridico = st.session_state.supabase_agent.get_juridico_by_id(
+                        user_id)
+                    pode_fazer_upload = juridico is not None
 
                     if not pode_fazer_upload:
                         st.error(
@@ -527,15 +523,13 @@ def solicitar_objecao(email_agent):
                 permission_manager = CargoPermissionManager(
                     st.session_state.supabase_agent)
                 user_id = get_user_id(st.session_state.user)
-                cargo_info = permission_manager.get_user_cargo_info(user_id)
 
-                tipos_multiplos = cargo_info.get(
-                    'tipos_multiplos', [cargo_info['tipo']])
-                pode_fazer_upload = 'juridico' in tipos_multiplos or cargo_info[
-                    'tipo'] == 'juridico'
+                # Verificar se é usuário jurídico (APENAS na tabela juridico)
+                juridico = st.session_state.supabase_agent.get_juridico_by_id(
+                    user_id)
+                pode_fazer_upload = juridico is not None
             except:
                 pode_fazer_upload = True
-                cargo_info = {"tipo": "default"}
             # Preparar dados da objeção
             objecao_data = {
                 "marca": marca,
@@ -636,8 +630,10 @@ def solicitar_objecao(email_agent):
                 # Processar upload dos arquivos se houver (apenas para salvar no banco)
                 if uploaded_files:
                     # Verificar se é advogado ou funcionário
-                    is_advogado = cargo_info['tipo'] == 'juridico' and cargo_info.get(
-                        'cargo') == 'advogado'
+                    juridico = st.session_state.supabase_agent.get_juridico_by_id(
+                        user_id)
+                    is_advogado = juridico and juridico.get(
+                        'cargo', '') == 'advogado'
                     tipo_usuario = "advogado" if is_advogado else "funcionario"
 
                     # Processar os arquivos usando o ObjecaoManager (apenas upload, sem e-mail)
@@ -688,8 +684,10 @@ def minhas_objecoes(email_agent):
     permission_manager = CargoPermissionManager(
         st.session_state.supabase_agent)
     user_id = get_user_id(st.session_state.user)
-    cargo_info = permission_manager.get_user_cargo_info(user_id)
-    is_admin = cargo_info['is_admin'] is True
+
+    # Para objeções: APENAS usuários com is_admin=True na tabela juridico
+    juridico = st.session_state.supabase_agent.get_juridico_by_id(user_id)
+    is_admin = juridico and juridico.get('is_admin', False)
 
     # Buscar objeções baseado no tipo de usuário
     if is_admin:
@@ -698,10 +696,11 @@ def minhas_objecoes(email_agent):
             st.session_state.jwt_token)
     else:
         # Verificar se é usuário jurídico ou consultor
-        tipos_multiplos = cargo_info.get(
-            'tipos_multiplos', [cargo_info['tipo']])
+        # Buscar dados específicos para determinar o tipo de usuário
+        juridico = st.session_state.supabase_agent.get_juridico_by_id(user_id)
+        perfil = st.session_state.supabase_agent.get_profile(user_id)
 
-        if 'juridico' in tipos_multiplos or cargo_info['tipo'] == 'juridico':
+        if juridico:
             # Usuário jurídico vê suas próprias objeções criadas
             objecoes = st.session_state.supabase_agent.get_objecoes_by_juridico(
                 user_id, st.session_state.jwt_token)
@@ -820,8 +819,10 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
         permission_manager = CargoPermissionManager(
             st.session_state.supabase_agent)
         user_id = get_user_id(st.session_state.user)
-        cargo_info = permission_manager.get_user_cargo_info(user_id)
-        is_admin_juridico = cargo_info['tipo'] == 'juridico' and cargo_info['is_admin'] is True
+
+        # Verificar se é admin jurídico (APENAS na tabela juridico)
+        juridico = st.session_state.supabase_agent.get_juridico_by_id(user_id)
+        is_admin_juridico = juridico and juridico.get('is_admin', False)
 
         if is_admin_juridico:
             st.subheader("Alterar Status")
@@ -884,78 +885,83 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
             permission_manager = CargoPermissionManager(
                 st.session_state.supabase_agent)
             user_id = get_user_id(st.session_state.user)
-            cargo_info = permission_manager.get_user_cargo_info(user_id)
 
-            # Verificar se é advogado ou funcionário
-            is_advogado = cargo_info['tipo'] == 'juridico' and cargo_info['cargo'] == 'advogado'
-            is_funcionario = cargo_info['tipo'] == 'juridico' and cargo_info['cargo'] == 'funcionario'
+            # Verificar se é usuário jurídico (APENAS na tabela juridico)
+            juridico = st.session_state.supabase_agent.get_juridico_by_id(
+                user_id)
 
-            # Apenas usuários jurídicos podem fazer upload
-            if cargo_info['tipo'] != 'juridico':
+            if not juridico:
                 st.info(
                     "Apenas usuários jurídicos (advogados/funcionários) podem fazer upload de arquivos.")
-            elif is_advogado:
-                st.subheader("📄 Petições")
+            else:
+                # Verificar se é advogado ou funcionário
+                is_advogado = juridico.get('cargo', '') == 'advogado'
+                is_funcionario = juridico.get('cargo', '') == 'funcionario'
 
-                # Usar form para evitar recarregamento automático
-                with st.form(key=f"upload_form_peticoes_{objecao['id']}"):
-                    uploaded_files = st.file_uploader(
-                        "Adicionar petições",
-                        type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
-                              'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
-                        accept_multiple_files=True,
-                        key=f"upload_peticoes_{objecao['id']}"
-                    )
+                if is_advogado:
+                    st.subheader("📄 Petições")
 
-                    submit_button = st.form_submit_button("Enviar Arquivos")
+                    # Usar form para evitar recarregamento automático
+                    with st.form(key=f"upload_form_peticoes_{objecao['id']}"):
+                        uploaded_files = st.file_uploader(
+                            "Adicionar petições",
+                            type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
+                                  'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
+                            accept_multiple_files=True,
+                            key=f"upload_peticoes_{objecao['id']}"
+                        )
 
-                    if submit_button and uploaded_files:
-                        with st.spinner("Enviando arquivos e notificando por e-mail..."):
-                            if objecao_manager.enviar_documentos_objecao(
-                                    objecao, uploaded_files, tipo_usuario="advogado"):
-                                st.success(
-                                    "📄 Arquivos enviados com sucesso! E-mails enviados para funcionário e aprova_teor")
+                        submit_button = st.form_submit_button(
+                            "Enviar Arquivos")
 
-                                # Alterar status automaticamente para "Concluída" quando advogado envia petições
-                                try:
-                                    objecao_manager.atualizar_status_objecao(
-                                        objecao['id'], objecao_manager.STATUS_CONCLUIDO)
+                        if submit_button and uploaded_files:
+                            with st.spinner("Enviando arquivos e notificando por e-mail..."):
+                                if objecao_manager.enviar_documentos_objecao(
+                                        objecao, uploaded_files, tipo_usuario="advogado"):
                                     st.success(
-                                        "✅ Status automaticamente alterado para 'Concluída'!")
-                                except Exception as e:
-                                    st.warning(
-                                        f"Petições enviadas, mas erro ao alterar status: {str(e)}")
+                                        "📄 Arquivos enviados com sucesso! E-mails enviados para funcionário e aprova_teor")
 
-                                st.rerun()
-                            else:
-                                st.error(
-                                    "Erro ao enviar arquivos. Verifique os logs.")
+                                    # Alterar status automaticamente para "Concluída" quando advogado envia petições
+                                    try:
+                                        objecao_manager.atualizar_status_objecao(
+                                            objecao['id'], objecao_manager.STATUS_CONCLUIDO)
+                                        st.success(
+                                            "✅ Status automaticamente alterado para 'Concluída'!")
+                                    except Exception as e:
+                                        st.warning(
+                                            f"Petições enviadas, mas erro ao alterar status: {str(e)}")
 
-            elif is_funcionario:
-                st.subheader("📎 Documentos")
+                                    st.rerun()
+                                else:
+                                    st.error(
+                                        "Erro ao enviar arquivos. Verifique os logs.")
 
-                # Usar form para evitar recarregamento automático
-                with st.form(key=f"upload_form_{objecao['id']}"):
-                    uploaded_files = st.file_uploader(
-                        "Adicionar documentos",
-                        type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
-                              'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
-                        accept_multiple_files=True,
-                        key=f"upload_docs_{objecao['id']}"
-                    )
+                elif is_funcionario:
+                    st.subheader("📎 Documentos")
 
-                    submit_button = st.form_submit_button("Enviar Arquivos")
+                    # Usar form para evitar recarregamento automático
+                    with st.form(key=f"upload_form_{objecao['id']}"):
+                        uploaded_files = st.file_uploader(
+                            "Adicionar documentos",
+                            type=['pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png',
+                                  'gif', 'bmp', 'mp4', 'avi', 'mov', 'wmv', 'zip', 'rar'],
+                            accept_multiple_files=True,
+                            key=f"upload_docs_{objecao['id']}"
+                        )
 
-                    if submit_button and uploaded_files:
-                        with st.spinner("Enviando arquivos e notificando por e-mail..."):
-                            if objecao_manager.enviar_documentos_objecao(
-                                    objecao, uploaded_files, tipo_usuario="funcionario"):
-                                st.success(
-                                    "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e destinatários jurídicos.")
-                                st.rerun()
-                            else:
-                                st.error(
-                                    "Erro ao enviar arquivos. Verifique os logs.")
+                        submit_button = st.form_submit_button(
+                            "Enviar Arquivos")
+
+                        if submit_button and uploaded_files:
+                            with st.spinner("Enviando arquivos e notificando por e-mail..."):
+                                if objecao_manager.enviar_documentos_objecao(
+                                        objecao, uploaded_files, tipo_usuario="funcionario"):
+                                    st.success(
+                                        "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e destinatários jurídicos.")
+                                    st.rerun()
+                                else:
+                                    st.error(
+                                        "Erro ao enviar arquivos. Verifique os logs.")
 
 
 def formatar_data_br(data_iso):

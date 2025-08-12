@@ -148,16 +148,20 @@ class PatenteManager:
                 email_file_name = normalize_filename(file.name)
                 anexos.append((pdf_bytes, email_file_name))
 
-            # Enviar e-mail APENAS para consultor
+            # Enviar e-mail para consultor E funcionário responsável
             email_consultor = patente.get('email_consultor', '').strip()
-            if email_consultor:
-                titulo = patente.get('titulo', '')
-                cliente = patente.get('cliente', '')
-                consultor_nome = patente.get('name_consultor', '')
-                servico = patente.get('servico', '')
+            email_funcionario = patente.get('email_funcionario', '').strip()
 
-                assunto = f"Relatório de Patente Concluído - {titulo} ({cliente})"
-                corpo = f"""
+            titulo = patente.get('titulo', '')
+            cliente = patente.get('cliente', '')
+            consultor_nome = patente.get('name_consultor', '')
+            funcionario_nome = patente.get('name_funcionario', '')
+            servico = patente.get('servico', '')
+
+            # 1. Enviar e-mail para o consultor
+            if email_consultor:
+                assunto_consultor = f"Relatório de Patente Concluído - {titulo} ({cliente})"
+                corpo_consultor = f"""
                 <div style='font-family: Arial; font-size: 12pt;'>
                 Olá {consultor_nome},<br><br>
                 Segue em anexo o relatório da patente solicitada.<br><br>
@@ -167,7 +171,8 @@ class PatenteManager:
                 - Serviço: {servico}<br>
                 - Processo: {patente.get('processo', '')}<br>
                 - Natureza: {patente.get('natureza', '')}<br>
-                - Contrato: {patente.get('ncontrato', '')}<br><br>
+                - Contrato: {patente.get('ncontrato', '')}<br>
+                - Funcionário Responsável: {funcionario_nome}<br><br>
                 Atenciosamente,<br>
                 Equipe AGP Consultoria
                 </div>
@@ -176,15 +181,52 @@ class PatenteManager:
                 if len(anexos) > 1:
                     self.email_agent.send_email_multiplos_anexos(
                         destinatario=email_consultor,
-                        assunto=assunto,
-                        corpo=corpo,
+                        assunto=assunto_consultor,
+                        corpo=corpo_consultor,
                         anexos=anexos
                     )
                 else:
                     self.email_agent.send_email_com_anexo(
                         destinatario=email_consultor,
-                        assunto=assunto,
-                        corpo=corpo,
+                        assunto=assunto_consultor,
+                        corpo=corpo_consultor,
+                        anexo_bytes=anexos[0][0],
+                        nome_arquivo=anexos[0][1]
+                    )
+
+            # 2. Enviar e-mail para o funcionário responsável
+            if email_funcionario:
+                assunto_funcionario = f"Relatório de Patente para Aprovação - {titulo} ({cliente})"
+                corpo_funcionario = f"""
+                <div style='font-family: Arial; font-size: 12pt;'>
+                Olá {funcionario_nome},<br><br>
+                O relatório da patente foi concluído e está pronto para sua aprovação.<br><br>
+                <b>Dados da patente:</b><br>
+                - Título: {titulo}<br>
+                - Cliente: {cliente}<br>
+                - Serviço: {servico}<br>
+                - Processo: {patente.get('processo', '')}<br>
+                - Natureza: {patente.get('natureza', '')}<br>
+                - Contrato: {patente.get('ncontrato', '')}<br>
+                - Consultor Responsável: {consultor_nome}<br><br>
+                O relatório está anexado a este e-mail para sua revisão.<br><br>
+                Atenciosamente,<br>
+                Equipe AGP Consultoria
+                </div>
+                """
+
+                if len(anexos) > 1:
+                    self.email_agent.send_email_multiplos_anexos(
+                        destinatario=email_funcionario,
+                        assunto=assunto_funcionario,
+                        corpo=corpo_funcionario,
+                        anexos=anexos
+                    )
+                else:
+                    self.email_agent.send_email_com_anexo(
+                        destinatario=email_funcionario,
+                        assunto=assunto_funcionario,
+                        corpo=corpo_funcionario,
                         anexo_bytes=anexos[0][0],
                         nome_arquivo=anexos[0][1]
                     )
@@ -342,9 +384,16 @@ def minhas_patentes(email_agent):
     # Verificar se é funcionário e se tem permissões de admin
     funcionario = supabase_agent.get_funcionario_by_id(user_id)
 
-    # Verificar se é engenheiro com permissões de admin (única verificação necessária)
-    is_admin = funcionario and funcionario.get('is_admin', False) and funcionario.get(
-        'cargo_func', 'funcionario') == 'engenheiro'
+    # Verificar se é admin (APENAS funcionário com is_admin = True)
+    is_admin = False
+    if funcionario and funcionario.get('is_admin', False):
+        is_admin = True
+
+    perfil = supabase_agent.get_profile(user_id)
+    juridico = supabase_agent.get_juridico_by_id(user_id)
+
+    # Verificar se tem permissão para ver todas as patentes (apenas funcionários admin)
+    pode_ver_todas_patentes = is_admin
 
     patentes = []
 
@@ -357,20 +406,20 @@ def minhas_patentes(email_agent):
 
     # Se for consultor (perfil existe), busca patentes associadas a ele
     perfil = supabase_agent.get_profile(user_id)
-    if perfil and not perfil.get('is_admin', False):
+    if perfil:
         patentes_consultor = supabase_agent.get_depositos_patente_para_consultor(
             user_id, st.session_state.jwt_token)
         if patentes_consultor:
             patentes.extend(patentes_consultor)
 
     # Se for administrador (funcionário com is_admin=true), mostra todas as patentes
-    if is_admin:
+    if pode_ver_todas_patentes:
         todas_patentes = supabase_agent.get_all_depositos_patente(
             st.session_state.jwt_token)
         if todas_patentes:
             patentes = todas_patentes
 
-    if is_admin:
+    if pode_ver_todas_patentes:
         # Adicionar filtro por consultor para administradores
         st.subheader("Filtros")
 
@@ -670,7 +719,25 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
                             if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
                                 patente_manager.atualizar_status_patente(
                                     patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO)
-                            st.success("Relatório enviado com sucesso!")
+
+                            # Mensagem de sucesso informando os destinatários
+                            email_consultor = patente.get(
+                                'email_consultor', '').strip()
+                            email_funcionario = patente.get(
+                                'email_funcionario', '').strip()
+
+                            destinatarios = []
+                            if email_consultor:
+                                destinatarios.append("consultor")
+                            if email_funcionario:
+                                destinatarios.append("funcionário responsável")
+
+                            if destinatarios:
+                                st.success(
+                                    f"📤 Relatório enviado com sucesso! E-mails enviados para: {', '.join(destinatarios)}.")
+                            else:
+                                st.success("📤 Relatório enviado com sucesso!")
+
                             st.rerun()
                 else:
                     # Se não há arquivos, mostrar apenas botão para ir para aprovação

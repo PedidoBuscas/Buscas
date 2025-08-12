@@ -7,7 +7,7 @@ from marcas.busca_manager import BuscaManager, get_user_attr
 from form_agent import FormAgent
 from email_agent import EmailAgent
 from supabase_agent import SupabaseAgent
-from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario
+from ui_components import apply_global_styles, render_login_screen, render_sidebar, limpar_formulario, limpar_session_state, limpar_cache_completo
 from config import carregar_configuracoes, configurar_logging
 from permission_manager import CargoPermissionManager
 
@@ -19,42 +19,60 @@ def get_user_id(user):
     return getattr(user, 'id', None)
 
 
-@st.cache_resource
-def get_supabase_agent():
-    """Cache do SupabaseAgent para evitar recriação"""
-    return SupabaseAgent()
+def get_user_permissions_direct(user_id, permission_manager):
+    """Obtém permissões do usuário diretamente sem cache"""
+    try:
+        return {
+            'user_info': permission_manager.get_user_display_info(user_id),
+            'cargo_info': permission_manager.get_user_cargo_info(user_id),
+            'available_menu': permission_manager.get_available_menu_items(user_id),
+            'menu_icons': permission_manager.get_icons_for_menu(
+                permission_manager.get_available_menu_items(user_id)
+            )
+        }
+    except Exception as e:
+
+        return None
 
 
-@st.cache_resource
-def get_email_agent(_config):
-    """Cache do EmailAgent para evitar recriação"""
-    return EmailAgent(
-        _config["smtp_host"],
-        _config["smtp_port"],
-        _config["smtp_user"],
-        _config["smtp_pass"],
-        _config["destinatarios"],
-        _config["destinatario_juridico"],
-        _config["destinatario_juridico_um"]
-    )
+def get_user_permissions_isolated(user_id, permission_manager):
+    """Obtém permissões do usuário com isolamento por sessão"""
+    # Criar chave única para o usuário
+    cache_key = f"user_permissions_{user_id}"
+
+    # Verificar se já temos as permissões no session_state
+    if cache_key in st.session_state:
+        cached_data = st.session_state[cache_key]
+        # Verificar se os dados são válidos
+        if cached_data and isinstance(cached_data, dict):
+            return cached_data
+
+    # Se não temos cache ou é inválido, buscar diretamente
+    permissions_data = get_user_permissions_direct(user_id, permission_manager)
+
+    # Armazenar no session_state para este usuário específico
+    if permissions_data:
+        st.session_state[cache_key] = permissions_data
+
+    return permissions_data
 
 
-@st.cache_resource
-def get_busca_manager(_supabase_agent, _email_agent):
-    """Cache do BuscaManager para evitar recriação"""
-    return BuscaManager(_supabase_agent, _email_agent)
+def clear_user_cache(user_id):
+    """Limpa o cache específico do usuário"""
+    cache_key = f"user_permissions_{user_id}"
+    if cache_key in st.session_state:
+        del st.session_state[cache_key]
 
 
-@st.cache_resource
-def get_form_agent():
-    """Cache do FormAgent para evitar recriação"""
-    return FormAgent()
+def get_image_base64(image_path):
+    """Converte imagem para base64"""
+    import base64
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception as e:
 
-
-@st.cache_resource
-def get_permission_manager(_supabase_agent):
-    """Cache do PermissionManager para evitar recriação"""
-    return CargoPermissionManager(_supabase_agent)
+        return ""
 
 
 def main():
@@ -69,14 +87,22 @@ def main():
     config = carregar_configuracoes()
     configurar_logging()
 
-    # Usar cache para otimizar criação de agentes
-    supabase_agent = get_supabase_agent()
-    email_agent = get_email_agent(config)
-    busca_manager = get_busca_manager(supabase_agent, email_agent)
-    form_agent = get_form_agent()
-    permission_manager = get_permission_manager(supabase_agent)
+    # Criar agentes sem cache para evitar compartilhamento entre usuários
+    supabase_agent = SupabaseAgent()
+    email_agent = EmailAgent(
+        config["smtp_host"],
+        config["smtp_port"],
+        config["smtp_user"],
+        config["smtp_pass"],
+        config["destinatarios"],
+        config["destinatario_juridico"],
+        config["destinatario_juridico_um"]
+    )
+    busca_manager = BuscaManager(supabase_agent, email_agent)
+    form_agent = FormAgent()
+    permission_manager = CargoPermissionManager(supabase_agent)
 
-    # Inicializar supabase_agent e email_agent no session_state
+    # Inicializar agentes no session_state
     if "supabase_agent" not in st.session_state:
         st.session_state.supabase_agent = supabase_agent
 
@@ -99,20 +125,43 @@ def main():
     # Obter informações do usuário
     user_id = get_user_id(st.session_state.user)
 
-    # Cache de permissões para otimizar consultas repetidas
-    @st.cache_data(ttl=300)  # 5 minutos
-    def get_user_permissions_cached(_user_id, _permission_manager):
-        return {
-            'user_info': _permission_manager.get_user_display_info(_user_id),
-            'cargo_info': _permission_manager.get_user_cargo_info(_user_id),
-            'available_menu': _permission_manager.get_available_menu_items(_user_id),
-            'menu_icons': _permission_manager.get_icons_for_menu(
-                _permission_manager.get_available_menu_items(_user_id)
-            )
-        }
+    # Validação de segurança: verificar se o usuário atual é o correto
+    jwt_token = st.session_state.get('jwt_token', '')
+    if not user_id or not jwt_token:
+        st.error("Sessão inválida. Por favor, faça login novamente.")
+        # Limpar cache e session_state
+        st.cache_data.clear()
+        limpar_session_state()
+        st.rerun()
 
-    # Usar cache para otimizar consultas de permissões
-    permissions_data = get_user_permissions_cached(user_id, permission_manager)
+    # Verificar se o JWT token ainda é válido
+    try:
+        # Tentar fazer uma requisição simples para validar o token
+        test_profile = supabase_agent.get_profile(user_id)
+        if not test_profile:
+            st.error("Token expirado. Por favor, faça login novamente.")
+            clear_user_cache(user_id)
+            st.cache_data.clear()
+            limpar_session_state()
+            st.rerun()
+    except Exception as e:
+        st.error("Erro de autenticação. Por favor, faça login novamente.")
+        clear_user_cache(user_id)
+        st.cache_data.clear()
+        limpar_session_state()
+        st.rerun()
+
+    # Obter permissões do usuário
+    permissions_data = get_user_permissions_isolated(
+        user_id, permission_manager)
+
+    # Se não conseguiu obter permissões, mostrar erro
+    if permissions_data is None:
+        st.error(
+            "Erro ao carregar permissões do usuário. Por favor, faça login novamente.")
+        st.cache_data.clear()
+        limpar_session_state()
+        st.rerun()
 
     user_info = permissions_data['user_info']
     cargo_info = permissions_data['cargo_info']
@@ -167,6 +216,50 @@ def main():
             }
         )
 
+        # Separador visual
+        st.markdown(
+            "<hr style='margin: 20px 0; border-color: #e0e0e0;'>", unsafe_allow_html=True)
+
+        # Adicionar espaço extra para empurrar o botão para baixo
+        st.markdown("<div style='height: 20px;'></div>",
+                    unsafe_allow_html=True)
+
+        # Botão de logout simples em cinza
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            # CSS para botão cinza
+            st.markdown("""
+            <style>
+            [data-testid="baseButton-secondary"] {
+                background-color: #6c757d !important;
+                color: white !important;
+                border: none !important;
+                border-radius: 8px !important;
+                padding: 12px 24px !important;
+                font-weight: 600 !important;
+                font-size: 1rem !important;
+                transition: all 0.2s !important;
+                box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3) !important;
+                width: 100% !important;
+                max-width: 200px !important;
+                cursor: pointer !important;
+                margin: 0 auto !important;
+            }
+            [data-testid="baseButton-secondary"]:hover {
+                background-color: #5a6268 !important;
+                transform: translateY(-1px) !important;
+                box-shadow: 0 4px 12px rgba(108, 117, 125, 0.4) !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+
+            # Botão Streamlit cinza com texto "Sair"
+            if st.button("Sair", help="Sair do sistema", key="logout_button"):
+                clear_user_cache(user_id)
+                limpar_session_state()
+                st.success("Logout realizado com sucesso!")
+                st.rerun()
+
     # Verificar permissões antes de renderizar cada página
     if escolha == "Solicitar Busca":
         if not permission_manager.check_page_permission(user_id, "Solicitar Busca"):
@@ -207,9 +300,10 @@ def main():
 
         # Determinar se é admin baseado no tipo de usuário
         try:
-            cargo_info = permission_manager.get_user_cargo_info(user_id)
-            # Admin de busca: qualquer usuário com is_admin = True
-            is_admin = cargo_info['is_admin'] is True
+            # Para buscas: APENAS usuários com is_admin=True na tabela perfil
+            perfil = supabase_agent.get_profile(user_id)
+            is_admin = perfil and perfil.get('is_admin', False)
+
         except Exception as e:
             st.warning("⚠️ Erro ao determinar permissões de administrador.")
             st.info("Tente novamente ou entre em contato com o suporte.")
@@ -252,8 +346,16 @@ def main():
 
         # Determinar se é admin baseado no tipo de usuário
         try:
-            cargo_info = permission_manager.get_user_cargo_info(user_id)
-            is_admin = cargo_info['is_admin'] is True
+            # Para relatório de custos: verificar admin em funcionário OU perfil (financeiro)
+            funcionario = supabase_agent.get_funcionario_by_id(user_id)
+            perfil = supabase_agent.get_profile(user_id)
+
+            is_admin = False
+            if funcionario and funcionario.get('is_admin', False):
+                is_admin = True
+            if perfil and perfil.get('is_admin', False):
+                is_admin = True
+
         except Exception as e:
             st.warning("⚠️ Erro ao determinar permissões de administrador.")
             st.info("Tente novamente ou entre em contato com o suporte.")
