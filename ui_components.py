@@ -13,7 +13,7 @@ def apply_global_styles():
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         .stDeployButton {display: none !important;}
-        
+
         [data-testid="stSidebar"] {
             background-color: #ffffff !important;
         }
@@ -194,7 +194,7 @@ def render_login_screen(supabase_agent):
             display: block !important;
             padding-top: 40px;
         }
-        
+
         html, body, [data-testid="stAppViewContainer"], .main, .block-container {
             background-color: #ffffff !important;
         }
@@ -259,7 +259,7 @@ def render_login_screen(supabase_agent):
         function setupEnterKey() {
             const passwordInput = document.querySelector('input[type="password"]');
             const emailInput = document.querySelector('input[type="text"]');
-            
+
             if (passwordInput && emailInput) {
                 passwordInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') {
@@ -277,11 +277,11 @@ def render_login_screen(supabase_agent):
                 });
             }
         }
-        
+
         document.addEventListener('DOMContentLoaded', function() {
             setTimeout(setupEnterKey, 500);
         });
-        
+
         if (document.readyState !== 'loading') {
             setTimeout(setupEnterKey, 500);
         }
@@ -369,7 +369,7 @@ def render_login_screen(supabase_agent):
                 st.markdown("""
                 <style>
                 /* Ocultar todos os elementos da tela de login */
-                .centered-login, .login-title, .login-subtitle, 
+                .centered-login, .login-title, .login-subtitle,
                 .stTextInput, .stButton, .footer {
                     display: none !important;
                 }
@@ -476,9 +476,6 @@ def render_login_screen(supabase_agent):
                         ">Carregando recursos necessários</div>
                     </div>
                     """, unsafe_allow_html=True)
-
-                from classificador_agent import carregar_classificador_inpi_json
-                st.session_state.classificador_inpi = carregar_classificador_inpi_json()
 
                 perfil = supabase_agent.get_profile(user_id)
                 if perfil:
@@ -775,69 +772,151 @@ def render_sidebar(modulos=None):
 
 def limpar_formulario():
     """Limpa todos os campos do formulário"""
-    # Resetar marcas para estado inicial (1 marca com 1 classe vazia)
+    # Resetar marcas para estado inicial (1 marca com 5 classes vazias)
     st.session_state["marcas"] = [
-        {"marca": "", "classes": [{"classe": "", "especificacao": ""}]}
+        {
+            "marca": "",
+            "classes": [
+                {"classe": "", "especificacao": ""},
+                {"classe": "", "especificacao": ""},
+                {"classe": "", "especificacao": ""},
+                {"classe": "", "especificacao": ""},
+                {"classe": "", "especificacao": ""}
+            ]
+        }
     ]
 
     # Limpar campos específicos do formulário
     campos_para_limpar = [
-        "resultados_busca", "termo_buscado", "enviando_pedido"
+        "enviando_pedido",
+        "cpf_cnpj_cliente",
+        "nome_cliente",
+        "observacao",
+        "data",  # Limpar data também
+        "envio_sucesso",  # Limpar flag de sucesso
+        "last_form_data"  # Limpar dados do último formulário
     ]
 
     for k in campos_para_limpar:
         if k in st.session_state:
             del st.session_state[k]
 
-    # Remove campos dinâmicos com nonce
+    # Remove campos dinâmicos do formulário
     chaves_dinamicas = [
         k for k in list(st.session_state.keys())
         if isinstance(k, str) and (
             k.startswith("classe_") or k.startswith("especificacao_") or
-            k.startswith("marca_") or k.startswith("check_") or
-            k.startswith("usar_varias_") or k.startswith("btn_buscar_classificador") or
-            k.startswith("limpar_resultados") or k.startswith("enviar_final") or
-            k.startswith("remover_classe_") or k.startswith("add_classe_") or
-            k.startswith("data_") or k.startswith("tipo_busca_") or
-            k.startswith("observacao_") or k.startswith(
-                "termo_busca_classificador_")
+            k.startswith("marca_") or k.startswith("data_") or
+            k.startswith("observacao_") or k.startswith("cpf_cnpj_cliente_") or
+            k.startswith("nome_cliente_")
         )
     ]
     for k in chaves_dinamicas:
         del st.session_state[k]
 
-    # Incrementar form_nonce para forçar limpeza dos campos dinâmicos
-    st.session_state["form_nonce"] = st.session_state.get("form_nonce", 0) + 1
+    # Forçar rerun para atualizar a interface
+    st.rerun()
 
 
 def exibir_especificacoes_card(busca):
-    """Exibe especificações em formato de card"""
+    """Exibe especificações em formato de card usando componentes nativos do Streamlit - OTIMIZADO"""
     especs = busca.get('especificacoes', '')
     classes = busca.get('classes', '')
+
+    # Garantir que classes_list seja sempre uma lista
     if isinstance(classes, str):
         try:
             classes_list = json.loads(classes)
+            if isinstance(classes_list, int):
+                classes_list = [str(classes_list)]
+            elif not isinstance(classes_list, list):
+                classes_list = [str(classes_list)]
         except Exception:
             classes_list = [c.strip() for c in classes.split(',') if c.strip()]
     elif isinstance(classes, list):
         classes_list = [str(c).strip() for c in classes if str(c).strip()]
+    elif isinstance(classes, int):
+        classes_list = [str(classes)]
     else:
         classes_list = []
 
     if especs:
         if isinstance(especs, str):
-            especs_list = [es.strip()
-                           for es in re.split(r",|\n", especs) if es.strip()]
+            # Dividir por ponto e vírgula primeiro, depois por vírgula
+            especs_list = []
+            for es in re.split(r";", especs):
+                if es.strip():
+                    especs_list.append(es.strip())
         elif isinstance(especs, list):
             especs_list = [str(es).strip() for es in especs if str(es).strip()]
         else:
             especs_list = []
 
-        if classes_list and len(classes_list) == len(especs_list):
-            for c, e in zip(classes_list, especs_list):
-                st.write(f"Classe {c}: {e}")
-        elif especs_list:
-            st.write(f"Especificações: {'; '.join(especs_list)}")
+        if especs_list:
+            # Criar título do card
+            if classes_list and len(classes_list) == 1:
+                card_title = f"📋 Classe {classes_list[0]} - Produtos/Serviços ({len(especs_list)} itens)"
+            else:
+                card_title = f"📋 Produtos/Serviços Encontrados ({len(especs_list)} itens)"
+
+            # Usar expander para criar o card (sempre aberto para facilitar seleção)
+            with st.expander(card_title, expanded=True):
+                # Lista com checkboxes usando componentes nativos do Streamlit
+                for i, espec in enumerate(especs_list):
+                    # Remover o número da classe do início da especificação
+                    espec_limpa = espec
+                    if classes_list and len(classes_list) > 0:
+                        classe_num = classes_list[0]
+                        if espec.startswith(f"{classe_num} - "):
+                            espec_limpa = espec[len(f"{classe_num} - "):]
+                        elif espec.startswith(f"{classe_num} "):
+                            espec_limpa = espec[len(f"{classe_num} "):]
+
+                    # Criar checkbox nativo do Streamlit com chave única
+                    checkbox_key = f"checkbox_{st.session_state.busca_session_key}_{classes_list[0] if classes_list else 'geral'}_{i}"
+
+                    # Verificar se esta especificação já está selecionada
+                    is_selected = any(
+                        sel.get('especificacao') == espec and sel.get(
+                            'classe') == (classes_list[0] if classes_list else '')
+                        for sel in st.session_state.get('especificacoes_selecionadas', [])
+                    )
+
+                    # Checkbox do Streamlit com texto inline
+                    checkbox_clicked = st.checkbox(
+                        espec_limpa, value=is_selected, key=checkbox_key)
+
+                    # Atualizar estado apenas se houve mudança
+                    if checkbox_clicked != is_selected:
+                        if checkbox_clicked:
+                            # Adicionar à lista de selecionados
+                            item = {
+                                'classe': classes_list[0] if classes_list else '',
+                                'especificacao': espec
+                            }
+                            if 'especificacoes_selecionadas' not in st.session_state:
+                                st.session_state.especificacoes_selecionadas = []
+
+                            # Verificar se já não existe
+                            if not any(
+                                sel.get('especificacao') == espec and sel.get(
+                                    'classe') == item['classe']
+                                    for sel in st.session_state.especificacoes_selecionadas
+                            ):
+                                st.session_state.especificacoes_selecionadas.append(
+                                    item)
+                        else:
+                            # Remover da lista de selecionados
+                            if 'especificacoes_selecionadas' in st.session_state:
+                                st.session_state.especificacoes_selecionadas = [
+                                    sel for sel in st.session_state.especificacoes_selecionadas
+                                    if not (sel.get('especificacao') == espec and sel.get('classe') == (classes_list[0] if classes_list else ''))
+                                ]
+
+                # Mostrar contador de seleções
+                if st.session_state.get('especificacoes_selecionadas', []):
+                    st.success(
+                        f"✅ {len(st.session_state.especificacoes_selecionadas)} especificação(ões) selecionada(s)")
         else:
             st.write("Especificações: Sem especificações")
     else:
@@ -878,6 +957,32 @@ def exibir_especificacoes_pdf(busca, pdf):
     else:
         pdf.multi_cell(0, 10, "Especificações: Sem especificações")
 
+
+def limpar_session_state():
+    """Limpa o session_state e cache para logout"""
+    # Limpar cache
+    st.cache_data.clear()
+
+    # Limpar cache específico do usuário se existir
+    current_user_id = st.session_state.get('current_user_id', None)
+    if current_user_id:
+        cache_key = f"user_permissions_{current_user_id}"
+        if cache_key in st.session_state:
+            del st.session_state[cache_key]
+
+    # Limpar session_state
+    keys_to_clear = [
+        'user', 'jwt_token', 'consultor_nome', 'consultor_email',
+        'enviando_pedido', 'sucesso',
+        'form_nonce', 'marcas', 'supabase_agent', 'email_agent',
+        'current_user_id'
+    ]
+
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+
+    # Aplicar estilos CSS globais
     st.markdown(
         """
         <style>
@@ -916,29 +1021,178 @@ def exibir_especificacoes_pdf(busca, pdf):
     )
 
 
-def limpar_session_state():
-    """Limpa o session_state e cache para logout"""
-    # Limpar cache
-    st.cache_data.clear()
+def render_classificador_inpi():
+    """Renderiza o classificador do INPI com campo de busca unificado - FORMULÁRIO SEPARADO"""
+    # Carregar dados do classificador com cache otimizado
+    try:
+        from classificador_agent import carregar_classificador_inpi_json
+        especificacoes = carregar_classificador_inpi_json()
+        if not especificacoes:
+            st.error("❌ Não foi possível carregar o classificador INPI")
+            return
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar classificador: {e}")
+        return
 
-    # Limpar cache específico do usuário se existir
-    current_user_id = st.session_state.get('current_user_id', None)
-    if current_user_id:
-        cache_key = f"user_permissions_{current_user_id}"
-        if cache_key in st.session_state:
-            del st.session_state[cache_key]
+    # Inicializar especificações selecionadas se não existir
+    if "especificacoes_selecionadas" not in st.session_state:
+        st.session_state.especificacoes_selecionadas = []
 
-    # Limpar session_state
-    keys_to_clear = [
-        'user', 'jwt_token', 'consultor_nome', 'consultor_email',
-        'classificador_inpi', 'enviando_pedido', 'sucesso',
-        'form_nonce', 'marcas', 'supabase_agent', 'email_agent',
-        'current_user_id'
-    ]
+    # Criar uma chave única para esta sessão de busca
+    if "busca_session_key" not in st.session_state:
+        import time
+        st.session_state.busca_session_key = f"busca_{int(time.time())}"
 
-    for key in keys_to_clear:
-        if key in st.session_state:
-            del st.session_state[key]
+    # Classificador sem formulário para permitir comunicação com o formulário principal
+
+    # Layout em colunas para campo de busca e botão
+    col_busca, col_botao = st.columns([3, 1])
+
+    with col_busca:
+        termo_busca = st.text_input(
+            "Digite uma palavra, produto ou número da classe:",
+            placeholder="Ex: computador, software, consultoria, 9, 35, 42...",
+            key="termo_busca_unificado"
+        )
+
+    with col_botao:
+        # Espaçamento para alinhar com o campo
+        st.markdown("<br>", unsafe_allow_html=True)
+        buscar_btn = st.button("🔍 Buscar", type="primary",
+                               key="btn_buscar_classificador")
+
+    # Processar busca quando o botão for clicado
+    if buscar_btn and termo_busca and len(termo_busca) >= 1:
+        from classificador_agent import buscar_no_classificador
+
+        # Busca por palavra/produto com cache
+        resultados = buscar_no_classificador(termo_busca, especificacoes)
+
+        # Salvar resultados na sessão para manter as seleções
+        st.session_state.resultados_busca_atual = resultados
+        st.session_state.termo_busca_atual = termo_busca
+
+        if resultados:
+            st.markdown(
+                f"**📋 Produto/Serviço '{termo_busca}' encontrado ({len(resultados)} itens):**")
+
+            # Agrupar resultados por classe
+            classes_agrupadas = {}
+            for r in resultados:
+                classe = r['classe']
+                especificacao = r['especificacao']
+
+                if classe not in classes_agrupadas:
+                    classes_agrupadas[classe] = []
+                classes_agrupadas[classe].append(especificacao)
+
+            # Exibir um card para cada classe (ordenado numericamente)
+            for classe, especificacoes in sorted(classes_agrupadas.items(), key=lambda x: int(x[0])):
+                busca_data = {
+                    'classes': [classe],
+                    'especificacoes': especificacoes
+                }
+                exibir_especificacoes_card(busca_data)
+
+            # Botão para adicionar especificações selecionadas (sempre visível após busca)
+            st.markdown("---")  # Separador visual
+            if st.button("📋 Adicionar Especificações Selecionadas", type="primary", key="btn_adicionar_especificacoes"):
+                if st.session_state.get('especificacoes_selecionadas', []):
+                    # Inicializar lista se não existir
+                    if "classificador_selecionado" not in st.session_state:
+                        st.session_state.classificador_selecionado = []
+
+                    # Adicionar apenas as especificações selecionadas
+                    itens_adicionados = 0
+                    for item in st.session_state.especificacoes_selecionadas:
+                        # Verificar se já não existe na lista
+                        ja_existe = any(
+                            sel.get('especificacao') == item.get('especificacao') and
+                            sel.get('classe') == item.get('classe')
+                            for sel in st.session_state.classificador_selecionado
+                        )
+
+                        if not ja_existe:
+                            st.session_state.classificador_selecionado.append(
+                                item)
+                            itens_adicionados += 1
+
+                    # Marcar que as especificações devem ser aplicadas ao formulário principal
+                    st.session_state.aplicar_especificacoes = True
+                    st.session_state.especificacoes_para_aplicar = st.session_state.especificacoes_selecionadas.copy()
+
+                    # Limpar seleções temporárias
+                    st.session_state.especificacoes_selecionadas = []
+
+                    st.success(
+                        f"✅ {itens_adicionados} especificação(ões) adicionada(s) e aplicada(s) ao formulário!")
+                    st.rerun()
+                else:
+                    st.warning(
+                        "⚠️ Nenhuma especificação foi selecionada. Selecione pelo menos uma especificação antes de adicionar.")
+
+    # Mostrar resultados salvos se existirem (para manter seleções após rerun)
+    elif "resultados_busca_atual" in st.session_state and st.session_state.resultados_busca_atual:
+        resultados = st.session_state.resultados_busca_atual
+        termo_busca = st.session_state.termo_busca_atual
+
+        st.markdown(
+            f"**📋 Produto/Serviço '{termo_busca}' encontrado ({len(resultados)} itens):**")
+
+        # Agrupar resultados por classe
+        classes_agrupadas = {}
+        for r in resultados:
+            classe = r['classe']
+            especificacao = r['especificacao']
+
+            if classe not in classes_agrupadas:
+                classes_agrupadas[classe] = []
+            classes_agrupadas[classe].append(especificacao)
+
+        # Exibir um card para cada classe (ordenado numericamente)
+        for classe, especificacoes in sorted(classes_agrupadas.items(), key=lambda x: int(x[0])):
+            busca_data = {
+                'classes': [classe],
+                'especificacoes': especificacoes
+            }
+            exibir_especificacoes_card(busca_data)
+
+        # Botão para adicionar especificações selecionadas (sempre visível após busca)
+        st.markdown("---")  # Separador visual
+        if st.button("📋 Adicionar Especificações Selecionadas", type="primary", key="btn_adicionar_especificacoes_saved"):
+            if st.session_state.get('especificacoes_selecionadas', []):
+                # Inicializar lista se não existir
+                if "classificador_selecionado" not in st.session_state:
+                    st.session_state.classificador_selecionado = []
+
+                # Adicionar apenas as especificações selecionadas
+                itens_adicionados = 0
+                for item in st.session_state.especificacoes_selecionadas:
+                    # Verificar se já não existe na lista
+                    ja_existe = any(
+                        sel.get('especificacao') == item.get('especificacao') and
+                        sel.get('classe') == item.get('classe')
+                        for sel in st.session_state.classificador_selecionado
+                    )
+
+                    if not ja_existe:
+                        st.session_state.classificador_selecionado.append(
+                            item)
+                        itens_adicionados += 1
+
+                # Marcar que as especificações devem ser aplicadas ao formulário principal
+                st.session_state.aplicar_especificacoes = True
+                st.session_state.especificacoes_para_aplicar = st.session_state.especificacoes_selecionadas.copy()
+
+                # Limpar seleções temporárias
+                st.session_state.especificacoes_selecionadas = []
+
+                st.success(
+                    f"✅ {itens_adicionados} especificação(ões) adicionada(s) e aplicada(s) ao formulário!")
+                st.rerun()
+            else:
+                st.warning(
+                    "⚠️ Nenhuma especificação foi selecionada. Selecione pelo menos uma especificação antes de adicionar.")
 
 
 def limpar_cache_completo():

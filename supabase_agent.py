@@ -141,8 +141,10 @@ class SupabaseAgent:
         # Remove analise_realizada se existir
         busca_data.pop("analise_realizada", None)
 
-        # Debug: Log dos dados sendo enviados
-        logging.info(f"Dados sendo enviados para Supabase: {busca_data}")
+        # Remover campos que não existem na tabela buscas
+        busca_data.pop("uploaded_file", None)
+        # Usar nome_consultor em vez de consultor
+        busca_data.pop("consultor", None)
 
         # Verificar se todos os campos obrigatórios estão presentes
         campos_obrigatorios = ['marca', 'consultor_id',
@@ -156,23 +158,13 @@ class SupabaseAgent:
         url = f"{os.getenv('SUPABASE_URL')}/rest/v1/buscas"
         headers = self._get_headers(jwt_token, content_type=True)
 
-        # Debug: Log da URL e headers
-        logging.info(f"URL: {url}")
-        logging.info(f"Headers: {headers}")
-
         resp = requests.post(url, headers=headers, json=busca_data)
-
-        # Debug: Log da resposta
-        logging.info(f"Status Code: {resp.status_code}")
-        logging.info(f"Response: {resp.text}")
 
         if resp.status_code != 201:
             st.warning(f"Erro ao inserir no Supabase: {resp.text}")
             logging.error(f"Erro ao inserir no Supabase: {resp.text}")
             return False
 
-        st.success("✅ Busca inserida com sucesso no Supabase!")
-        logging.info("Busca inserida com sucesso no Supabase")
         return True
 
     def get_buscas_by_consultor(self, consultor_id: str) -> List[Dict[str, Any]]:
@@ -312,7 +304,14 @@ class SupabaseAgent:
             logging.info(f"Status code: {resp.status_code}")
             logging.info(f"Response: {resp.text}")
 
-            if resp.status_code not in (200, 201):
+            if resp.status_code == 409:  # Duplicate file
+                # Informar ao usuário que o arquivo já existe
+                error_msg = f"O arquivo '{file_name}' já existe no banco de dados. Por favor, altere o nome do arquivo e tente novamente."
+                st.error(error_msg)
+                logging.warning(f"Arquivo duplicado detectado: {file_name}")
+                raise Exception(error_msg)
+
+            elif resp.status_code not in (200, 201):
                 error_msg = f"Erro ao fazer upload do arquivo: {resp.text}"
                 st.warning(error_msg)
                 logging.error(error_msg)
@@ -1501,6 +1500,97 @@ class SupabaseAgent:
                 verify_data = verify_resp.json()
                 if verify_data:
                     saved_pdfs = verify_data[0].get('para_aprovacao', [])
+                    if saved_pdfs and len(saved_pdfs) > 0:
+                        st.success("✅ Documentos salvos com sucesso!")
+                    else:
+                        st.warning("⚠️ Atualização não confirmada.")
+                        return False
+                else:
+                    st.warning("⚠️ Nenhum dado encontrado na verificação")
+                    return False
+            else:
+                st.warning(f"⚠️ Erro na verificação: {verify_resp.text}")
+                return False
+
+            return True
+        except Exception as e:
+            st.error(f"Erro na requisição: {str(e)}")
+            logging.error(f"Erro na requisição: {str(e)}")
+            return False
+
+    def update_patente_pdf_pendente(self, patente_id, pdf_urls, jwt_token=None):
+        """
+        Atualiza a coluna pdf_pendente de uma patente pelo ID via REST API do Supabase.
+        """
+        import requests
+        url = f"{os.getenv('SUPABASE_URL')}/rest/v1/deposito_patente?id=eq.{patente_id}"
+
+        token = jwt_token or st.session_state.get('jwt_token')
+        if not token:
+            st.error("Token JWT não encontrado")
+            return False
+
+        headers = {
+            "apikey": os.getenv("SUPABASE_KEY"),
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        # Primeiro, buscar os PDFs existentes
+        try:
+            resp = requests.get(url, headers=headers)
+            if resp.status_code == 200:
+                patente_data = resp.json()
+                if patente_data:
+                    existing_pdfs = patente_data[0].get('pdf_pendente', [])
+
+                    # Tratar diferentes tipos de dados
+                    if existing_pdfs is None:
+                        existing_pdfs = []
+                    elif isinstance(existing_pdfs, str):
+                        try:
+                            import json
+                            existing_pdfs = json.loads(existing_pdfs)
+                        except:
+                            # Se não conseguir fazer parse JSON, tratar como string única
+                            existing_pdfs = [existing_pdfs] if existing_pdfs.strip() else [
+                            ]
+                    elif not isinstance(existing_pdfs, list):
+                        # Se não for lista, converter para lista
+                        existing_pdfs = [
+                            existing_pdfs] if existing_pdfs else []
+                else:
+                    existing_pdfs = []
+            else:
+                st.warning(f"Erro ao buscar patente: {resp.text}")
+                return False
+        except Exception as e:
+            st.error(f"Erro ao buscar patente: {str(e)}")
+            return False
+
+        # Combinar PDFs existentes com novos PDFs
+        all_pdfs = existing_pdfs + pdf_urls
+
+        # Atualizar a coluna pdf_pendente
+        data = {"pdf_pendente": all_pdfs}
+
+        try:
+            resp = requests.patch(url, headers=headers, json=data)
+
+            if resp.status_code not in (200, 204):
+                st.warning(
+                    f"Erro ao atualizar pdf_pendente da patente: {resp.text}")
+                logging.error(
+                    f"Erro ao atualizar pdf_pendente da patente: {resp.text}")
+                return False
+
+            # Verificar se os dados foram realmente salvos
+            verify_resp = requests.get(url, headers=headers)
+
+            if verify_resp.status_code == 200:
+                verify_data = verify_resp.json()
+                if verify_data:
+                    saved_pdfs = verify_data[0].get('pdf_pendente', [])
                     if saved_pdfs and len(saved_pdfs) > 0:
                         st.success("✅ Documentos salvos com sucesso!")
                     else:

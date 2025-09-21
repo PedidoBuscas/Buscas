@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import unicodedata
 import re
+from collections import defaultdict
 
 
 class PatenteManager:
@@ -22,22 +23,41 @@ class PatenteManager:
         self.supabase_agent = supabase_agent
         self.email_agent = email_agent
 
-    def verificar_permissao_status_patente(self, user_id: str) -> bool:
+    def verificar_permissao_status_patente(self, user_id: str, patente_id: str = None, novo_status: str = None) -> bool:
         """
         Verifica se o usuário tem permissão para alterar status de patentes.
-        Apenas usuários is_admin com cargo 'engenheiro' podem alterar status.
+        - Engenheiros administradores podem alterar qualquer status
+        - Consultores podem alterar status para "Concluído" apenas em suas próprias patentes
         """
         # Buscar funcionário
         funcionario = self.supabase_agent.get_funcionario_by_id(user_id)
-        if not funcionario:
-            return False
 
-        # Verificar se é admin e tem cargo engenheiro
-        is_admin = funcionario.get('is_admin', False)
-        # Usar cargo_func como no permission_manager
-        cargo = funcionario.get('cargo_func', 'funcionario')
+        # Verificar se é admin e tem cargo engenheiro (permissão total)
+        if funcionario:
+            is_admin = funcionario.get('is_admin', False)
+            cargo = funcionario.get('cargo_func', 'funcionario')
+            if is_admin and cargo == 'engenheiro':
+                return True
 
-        return is_admin and cargo == 'engenheiro'
+        # Verificar se é consultor e se pode alterar para "Concluído"
+        if novo_status == self.STATUS_CONCLUIDO and patente_id:
+            perfil = self.supabase_agent.get_profile(user_id)
+            if perfil:
+                # Verificar se o usuário é o consultor responsável pela patente
+                try:
+                    # Buscar patentes do consultor
+                    patentes_consultor = self.supabase_agent.get_depositos_patente_para_consultor(
+                        user_id, st.session_state.jwt_token)
+                    if patentes_consultor:
+                        for patente in patentes_consultor:
+                            if patente.get('id') == patente_id:
+                                return True
+                except Exception as e:
+                    # Log do erro para debug se necessário
+                    print(f"Erro ao verificar permissão do consultor: {e}")
+                    pass
+
+        return False
 
     def atualizar_status_patente(self, patente_id: str, novo_status: str) -> bool:
         """
@@ -51,9 +71,13 @@ class PatenteManager:
         user_id = st.session_state.user['id'] if isinstance(
             st.session_state.user, dict) else st.session_state.user.id
 
-        if not self.verificar_permissao_status_patente(user_id):
-            st.error(
-                "Você não tem permissão para alterar o status de patentes. Apenas engenheiros administradores podem fazer esta alteração.")
+        if not self.verificar_permissao_status_patente(user_id, patente_id, novo_status):
+            if novo_status == self.STATUS_CONCLUIDO:
+                st.error(
+                    "Você não tem permissão para alterar o status para 'Concluído'. Apenas o consultor responsável pela patente pode fazer esta alteração.")
+            else:
+                st.error(
+                    "Você não tem permissão para alterar o status de patentes. Apenas engenheiros administradores podem fazer esta alteração.")
             return False
 
         ok = self.supabase_agent.update_patente_status(
@@ -79,11 +103,9 @@ class PatenteManager:
         status = patente.get('status_patente', self.STATUS_PENDENTE)
         status_validos = [
             self.STATUS_PENDENTE,
-            self.STATUS_RECEBIDO,
             self.STATUS_AGUARDANDO_INFORMACOES,
             self.STATUS_RELATORIO_SENDO_ELABORADO,
             self.STATUS_RELATORIO_ENVIADO_APROVACAO,
-            self.STATUS_RELATORIO_APROVADO,
             self.STATUS_CONCLUIDO
         ]
         if status not in status_validos:
@@ -97,11 +119,9 @@ class PatenteManager:
         """
         status_dict = {
             self.STATUS_PENDENTE: [],
-            self.STATUS_RECEBIDO: [],
             self.STATUS_AGUARDANDO_INFORMACOES: [],
             self.STATUS_RELATORIO_SENDO_ELABORADO: [],
             self.STATUS_RELATORIO_ENVIADO_APROVACAO: [],
-            self.STATUS_RELATORIO_APROVADO: [],
             self.STATUS_CONCLUIDO: []
         }
         for patente in patentes:
@@ -125,7 +145,7 @@ class PatenteManager:
             # Upload dos arquivos
             pdf_urls = []
             for file in uploaded_files:
-                file_name = normalize_filename(f"{patente['id']}_{file.name}")
+                file_name = normalize_filename(file.name)
                 url = self.supabase_agent.upload_pdf_to_storage(
                     file, file_name, st.session_state.jwt_token, bucket="patentepdf")
                 pdf_urls.append(url)
@@ -290,6 +310,8 @@ class PatenteManager:
             titulo = patente.get('titulo', '')
             cliente = patente.get('cliente', '')
             processo = patente.get('processo', '')
+            servico = patente.get('servico', 'N/A')
+            contrato = patente.get('contrato', 'N/A')
             consultor_nome = patente.get('name_consultor', '')
             funcionario_nome = patente.get('name_funcionario', '')
             email_consultor = patente.get('email_consultor', '').strip()
@@ -303,6 +325,8 @@ class PatenteManager:
             <b>Dados da patente:</b><br>
             - Título: {titulo}<br>
             - Cliente: {cliente}<br>
+            - Tipo de Serviço: {servico}<br>
+            - Número do Contrato: {contrato}<br>
             - Processo: {processo}<br>
             - Consultor: {consultor_nome}<br>
             - Funcionário: {funcionario_nome}<br><br>
@@ -362,7 +386,65 @@ def solicitar_busca():
 
 def minhas_buscas():
     st.header("Minhas Buscas de Patente")
-    st.info("Funcionalidade de visualização de buscas de patente em breve!")
+    supabase_agent = SupabaseAgent()
+
+    if "user" not in st.session_state:
+        st.error("Usuário não autenticado.")
+        return
+
+    user_id = st.session_state.user['id'] if isinstance(
+        st.session_state.user, dict) else st.session_state.user.id
+
+    # Verificar se é funcionário e se tem permissões de admin
+    funcionario = supabase_agent.get_funcionario_by_id(user_id)
+
+    # Verificar se é admin (APENAS funcionário com is_admin = True)
+    is_admin = False
+    if funcionario and funcionario.get('is_admin', False):
+        is_admin = True
+
+    perfil = supabase_agent.get_profile(user_id)
+
+    # Verificar se tem permissão para ver todas as patentes (apenas funcionários admin)
+    pode_ver_todas_patentes = is_admin
+
+    patentes = []
+
+    # Se for funcionário, busca patentes cadastradas por ele
+    if funcionario:
+        patentes_funcionario = supabase_agent.get_depositos_patente_para_funcionario(
+            user_id, st.session_state.jwt_token)
+        if patentes_funcionario:
+            patentes.extend(patentes_funcionario)
+
+    # Se for consultor (perfil existe), busca patentes associadas a ele
+    if perfil:
+        patentes_consultor = supabase_agent.get_depositos_patente_para_consultor(
+            user_id, st.session_state.jwt_token)
+        if patentes_consultor:
+            patentes.extend(patentes_consultor)
+
+    # Se for administrador (funcionário com is_admin=true), mostra todas as patentes
+    if pode_ver_todas_patentes:
+        todas_patentes = supabase_agent.get_all_depositos_patente(
+            st.session_state.jwt_token)
+        if todas_patentes:
+            patentes = todas_patentes
+
+    # Filtrar apenas patentes com serviço "Busca de Patente"
+    patentes_busca = []
+    for patente in patentes:
+        if patente.get('servico') == 'Busca de Patente':
+            patentes_busca.append(patente)
+
+    if not patentes_busca:
+        st.info("Nenhuma busca de patente encontrada.")
+        return
+
+    # Exibir as buscas de patente
+    for patente in patentes_busca:
+        renderizar_busca_patente(
+            patente, supabase_agent, is_admin, funcionario)
 
 
 def solicitar_patente():
@@ -459,11 +541,9 @@ def minhas_patentes(email_agent):
     # Definir todos os status possíveis com seus labels
     status_keys = [
         (patente_manager.STATUS_PENDENTE, "Pendentes"),
-        (patente_manager.STATUS_RECEBIDO, "Recebidas"),
         (patente_manager.STATUS_AGUARDANDO_INFORMACOES, "Aguardando Info"),
         (patente_manager.STATUS_RELATORIO_SENDO_ELABORADO, "Elab Relatório"),
         (patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO, "Para Aprovação"),
-        (patente_manager.STATUS_RELATORIO_APROVADO, "Rel Aprovado"),
         (patente_manager.STATUS_CONCLUIDO, "Concluído")
     ]
 
@@ -484,9 +564,33 @@ def minhas_patentes(email_agent):
         with tab:
             patentes_na_aba = abas[i]
             if patentes_na_aba:
-                for patente in patentes_na_aba:
-                    renderizar_patente(
-                        patente, patente_manager, is_admin, funcionario)
+                # Verificar se é a aba "Concluído"
+                if status_keys[i][0] == patente_manager.STATUS_CONCLUIDO:
+                    # Organizar por mês primeiro, depois por consultor (apenas para Concluídas)
+                    patentes_por_mes = organizar_patentes_por_mes(
+                        patentes_na_aba)
+
+                    for mes_ano, patentes_do_mes in patentes_por_mes.items():
+                        with st.expander(f"📅 {mes_ano} ({len(patentes_do_mes)} patentes)"):
+                            # Agrupar por consultor dentro do mês
+                            patentes_por_consultor = defaultdict(list)
+                            for patente in patentes_do_mes:
+                                nome = patente.get(
+                                    'name_consultor', 'Sem Consultor')
+                                patentes_por_consultor[nome].append(patente)
+
+                            # Ordenar consultores alfabeticamente
+                            for consultor in sorted(patentes_por_consultor.keys()):
+                                patentes_do_consultor = patentes_por_consultor[consultor]
+                                with st.expander(f"👤 {consultor} ({len(patentes_do_consultor)})"):
+                                    for patente in patentes_do_consultor:
+                                        renderizar_patente(
+                                            patente, patente_manager, is_admin, funcionario)
+                else:
+                    # Para outros status, manter organização normal
+                    for patente in patentes_na_aba:
+                        renderizar_patente(
+                            patente, patente_manager, is_admin, funcionario)
             else:
                 st.info(
                     f"Nenhuma patente encontrada no status '{status_keys[i][1]}'.")
@@ -494,6 +598,9 @@ def minhas_patentes(email_agent):
 
 def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
     """Renderiza uma patente individual na interface."""
+    # Criar instância do supabase_agent para uso na função
+    supabase_agent = patente_manager.supabase_agent
+
     status = patente_manager.get_status_atual(patente)
     status_icon = patente_manager.supabase_agent.get_patente_status_icon(
         status)
@@ -567,7 +674,7 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
         if patente.get('observacoes'):
             st.markdown(f"**Observações:** {patente.get('observacoes', '')}")
 
-        # Exibir links dos arquivos da patente
+        # Exibir links dos arquivos da patente (PRIMEIRO - documentos originais)
         pdfs = patente.get('pdf_patente')
         if pdfs:
             st.markdown("---")
@@ -585,7 +692,25 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
                             '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
                         st.markdown(f"• [{filename}]({url})")
 
-        # Exibir documentos da coluna aguardando_info
+        # Exibir documentos da coluna pdf_pendente (SEGUNDO)
+        pdf_pendente = patente.get('pdf_pendente')
+        if pdf_pendente:
+            st.markdown("---")
+            st.markdown("**📄 Documentos - Status Pendente:**")
+            if isinstance(pdf_pendente, str):
+                try:
+                    import json
+                    pdf_pendente = json.loads(pdf_pendente)
+                except:
+                    pdf_pendente = [pdf_pendente]
+            if isinstance(pdf_pendente, list):
+                for i, url in enumerate(pdf_pendente):
+                    if url:
+                        filename = url.split(
+                            '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
+                        st.markdown(f"• [{filename}]({url})")
+
+        # Exibir documentos da coluna aguardando_info (TERCEIRO)
         aguardando_info = patente.get('aguardando_info')
         if aguardando_info:
             st.markdown("---")
@@ -603,7 +728,7 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
                             '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
                         st.markdown(f"• [{filename}]({url})")
 
-        # Exibir documentos da coluna para_aprovacao
+        # Exibir documentos da coluna para_aprovacao (ÚLTIMO)
         para_aprovacao = patente.get('para_aprovacao')
         if para_aprovacao:
             st.markdown("---")
@@ -621,8 +746,11 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
                             '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
                         st.markdown(f"• [{filename}]({url})")
 
-        # Upload de documentos para consultores (após envio da requisição)
-        if is_consultor and status in [patente_manager.STATUS_AGUARDANDO_INFORMACOES, patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO]:
+        # Upload de documentos para consultores e funcionários (apenas para aguardando informações)
+        is_engenheiro = (funcionario and funcionario.get(
+            'cargo_func', '') == 'engenheiro')
+        if ((is_consultor or (funcionario and not is_engenheiro)) and
+                status == patente_manager.STATUS_AGUARDANDO_INFORMACOES):
             st.markdown("---")
             st.write("📄 **Adicionar Documentos Complementares**")
             st.info(
@@ -631,7 +759,8 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
             uploaded_files = st.file_uploader(
                 "Selecione os documentos",
                 type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
-                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar"],
+                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar",
+                      "step", "stp", "igs", "iges", "skp"],
                 accept_multiple_files=True,
                 key=f"docs_consultor_patente_{patente['id']}"
             )
@@ -655,11 +784,17 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
 
             if relatorio_data and isinstance(relatorio_data, dict):
                 pdf_urls = relatorio_data.get('pdf_urls', [])
+                arquivos = relatorio_data.get('arquivos', [])
                 if pdf_urls:
                     st.markdown("---")
                     st.markdown("**📄 Arquivo(s) do relatório:**")
                     for i, url in enumerate(pdf_urls):
-                        st.markdown(f"• [Relatório {i+1}]({url})")
+                        # Usar o nome real do arquivo se disponível, senão usar "Relatório {i+1}"
+                        if arquivos and i < len(arquivos) and arquivos[i].get('nome'):
+                            nome_arquivo = arquivos[i]['nome']
+                        else:
+                            nome_arquivo = f"Relatório {i+1}"
+                        st.markdown(f"• [{nome_arquivo}]({url})")
 
                     # Mostrar data de envio se disponível
                     data_envio = relatorio_data.get('data_envio')
@@ -671,122 +806,281 @@ def renderizar_patente(patente, patente_manager, is_admin, funcionario=None):
                         except:
                             pass
 
+        # Upload de documentos para status pendente (consultor e funcionário, mas NÃO engenheiros)
+        is_engenheiro = (funcionario and funcionario.get(
+            'cargo_func', '') == 'engenheiro')
+        if status == patente_manager.STATUS_PENDENTE and (is_consultor or (funcionario and not is_engenheiro)):
+            st.markdown("---")
+            st.markdown("**📤 Upload de Documentos (Status Pendente):**")
+            st.info(
+                "Você pode adicionar documentos que serão enviados ao engenheiro.")
+
+            uploaded_files_pendente = st.file_uploader(
+                "Selecione os documentos",
+                type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
+                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar",
+                      "step", "stp", "igs", "iges", "skp"],
+                accept_multiple_files=True,
+                key=f"docs_pendente_patente_{patente['id']}"
+            )
+            if uploaded_files_pendente and st.button("Enviar Arquivos", key=f"btn_docs_pendente_patente_{patente['id']}"):
+                with st.spinner("Enviando arquivos..."):
+                    if _enviar_documentos_pendente_patente(patente, uploaded_files_pendente, supabase_agent):
+                        st.success("✅ Arquivos enviados com sucesso!")
+                        # Limpar o upload após envio bem-sucedido
+                        upload_key = f"docs_pendente_patente_{patente['id']}"
+                        if upload_key in st.session_state:
+                            del st.session_state[upload_key]
+                        st.rerun()
+                    else:
+                        st.error(
+                            "❌ Erro ao enviar arquivos. Verifique os logs.")
+
         # Botões de ação para administradores
         if is_admin:
             st.markdown("---")
 
             # Upload de documentos para funcionários (exceto engenheiros)
-            is_engenheiro_admin = (funcionario and
-                                   funcionario.get('cargo_func', '') == 'engenheiro' and
-                                   funcionario.get('is_admin', False))
+        is_engenheiro_admin = (funcionario and
+                               funcionario.get('cargo_func', '') == 'engenheiro' and
+                               funcionario.get('is_admin', False))
 
-            # Upload de documentos para funcionários (não engenheiros)
-            if (status in [patente_manager.STATUS_PENDENTE, patente_manager.STATUS_RECEBIDO, patente_manager.STATUS_AGUARDANDO_INFORMACOES] and
-                    not is_engenheiro_admin):
-                st.markdown("**📤 Upload de Documentos:**")
-                uploaded_files = st.file_uploader(
-                    "Selecione os documentos",
-                    type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
-                          "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar"],
-                    accept_multiple_files=True,
-                    key=f"docs_funcionario_patente_{patente['id']}"
-                )
-                if uploaded_files and st.button("Enviar Arquivos", key=f"btn_docs_funcionario_patente_{patente['id']}"):
-                    with st.spinner("Enviando arquivos..."):
-                        if _enviar_documentos_funcionario_patente(patente, uploaded_files, patente_manager):
-                            st.success("✅ Arquivos enviados com sucesso!")
-                            st.rerun()
+        # Upload de documentos para funcionários (não engenheiros) - apenas para status PENDENTE
+        if (status == patente_manager.STATUS_PENDENTE and
+                not is_engenheiro_admin):
+            st.markdown("**📤 Upload de Documentos:**")
+            uploaded_files = st.file_uploader(
+                "Selecione os documentos",
+                type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
+                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar",
+                      "step", "stp", "igs", "iges", "skp"],
+                accept_multiple_files=True,
+                key=f"docs_funcionario_patente_{patente['id']}"
+            )
+            if uploaded_files and st.button("Enviar Arquivos", key=f"btn_docs_funcionario_patente_{patente['id']}"):
+                with st.spinner("Enviando arquivos..."):
+                    if _enviar_documentos_funcionario_patente(patente, uploaded_files, patente_manager):
+                        st.success("✅ Arquivos enviados com sucesso!")
+                        # Limpar o upload após envio bem-sucedido
+                        upload_key = f"docs_funcionario_patente_{patente['id']}"
+                        if upload_key in st.session_state:
+                            del st.session_state[upload_key]
+                        st.rerun()
+                    else:
+                        st.error(
+                            "❌ Erro ao enviar arquivos. Verifique os logs.")
+
+        # Upload e envio de relatório (apenas para engenheiros com is_admin=true quando status for "Relatório Sendo Elaborado")
+        if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO and is_engenheiro_admin:
+            st.markdown("**📤 Upload do relatório:**")
+            uploaded_files = st.file_uploader(
+                "Selecione os arquivos do relatório",
+                type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
+                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar",
+                      "step", "stp", "igs", "iges", "skp"],
+                accept_multiple_files=True,
+                key=f"relatorio_{patente['id']}"
+            )
+
+            # Se há arquivos no upload, mostrar apenas botão de enviar
+            if uploaded_files and len(uploaded_files) > 0:
+                if st.button("📤 Enviar Relatório", key=f"enviar_relatorio_{patente['id']}"):
+                    if patente_manager.enviar_relatorio_patente(patente, uploaded_files):
+                        # Atualizar status para "Para Aprovação" após envio bem-sucedido
+                        if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
+                            patente_manager.atualizar_status_patente(
+                                patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO)
+
+                        # Mensagem de sucesso informando os destinatários
+                        email_consultor = patente.get(
+                            'email_consultor', '').strip()
+                        email_funcionario = patente.get(
+                            'email_funcionario', '').strip()
+
+                        destinatarios = []
+                        if email_consultor:
+                            destinatarios.append("consultor")
+                        if email_funcionario:
+                            destinatarios.append("funcionário responsável")
+
+                        if destinatarios:
+                            st.success(
+                                f"📤 Relatório enviado com sucesso! E-mails enviados para: {', '.join(destinatarios)}.")
                         else:
-                            st.error(
-                                "❌ Erro ao enviar arquivos. Verifique os logs.")
+                            st.success("📤 Relatório enviado com sucesso!")
 
-            # Upload e envio de relatório (apenas para engenheiros com is_admin=true quando status for "Relatório Sendo Elaborado")
-            if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO and is_engenheiro_admin:
-                st.markdown("**📤 Upload do relatório:**")
-                uploaded_files = st.file_uploader(
-                    "Selecione os arquivos do relatório",
-                    type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
-                          "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar"],
-                    accept_multiple_files=True,
-                    key=f"relatorio_{patente['id']}"
-                )
+                            # Limpar o upload após envio bem-sucedido
+                            upload_key = f"relatorio_{patente['id']}"
+                            if upload_key in st.session_state:
+                                del st.session_state[upload_key]
+                        st.rerun()
+            else:
+                # Se não há arquivos, mostrar apenas botão para ir para aprovação
+                if st.button("📤 Para Aprovação", key=f"para_aprovacao_{patente['id']}"):
+                    if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO):
+                        st.rerun()
 
-                # Se há arquivos no upload, mostrar apenas botão de enviar
-                if uploaded_files and len(uploaded_files) > 0:
-                    if st.button("📤 Enviar Relatório", key=f"enviar_relatorio_{patente['id']}"):
-                        if patente_manager.enviar_relatorio_patente(patente, uploaded_files):
-                            # Atualizar status para "Para Aprovação" após envio bem-sucedido
-                            if status == patente_manager.STATUS_RELATORIO_SENDO_ELABORADO:
-                                patente_manager.atualizar_status_patente(
-                                    patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO)
-
-                            # Mensagem de sucesso informando os destinatários
-                            email_consultor = patente.get(
-                                'email_consultor', '').strip()
-                            email_funcionario = patente.get(
-                                'email_funcionario', '').strip()
-
-                            destinatarios = []
-                            if email_consultor:
-                                destinatarios.append("consultor")
-                            if email_funcionario:
-                                destinatarios.append("funcionário responsável")
-
-                            if destinatarios:
-                                st.success(
-                                    f"📤 Relatório enviado com sucesso! E-mails enviados para: {', '.join(destinatarios)}.")
-                            else:
-                                st.success("📤 Relatório enviado com sucesso!")
-
-                            st.rerun()
-                else:
-                    # Se não há arquivos, mostrar apenas botão para ir para aprovação
-                    if st.button("📤 Para Aprovação", key=f"para_aprovacao_{patente['id']}"):
-                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO):
-                            st.rerun()
-
-            # Botões de alteração de status para engenheiros administradores
-            col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
-
-            with col1:
-                if status == patente_manager.STATUS_PENDENTE:
-                    if st.button("📥 Recebido", key=f"recebido_{patente['id']}"):
-                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RECEBIDO):
-                            st.rerun()
-                elif status == patente_manager.STATUS_RECEBIDO:
-                    if st.button("📋 Aguardando Info", key=f"documentos_{patente['id']}"):
+        # Botões de alteração de status para engenheiros administradores
+        if is_engenheiro_admin:
+            if status == patente_manager.STATUS_PENDENTE:
+                st.markdown("**Alterar Status:**")
+                col_pendente1, col_pendente2 = st.columns(2)
+                with col_pendente1:
+                    if st.button("📋 Aguardando Informações", key=f"documentos_{patente['id']}", use_container_width=True):
                         if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_AGUARDANDO_INFORMACOES):
                             st.rerun()
-                elif status == patente_manager.STATUS_AGUARDANDO_INFORMACOES:
-                    if st.button("📝 Elaborando Relatório", key=f"elaborando_{patente['id']}"):
+                with col_pendente2:
+                    if st.button("📝 Elaborando Relatório", key=f"elaborando_direto_{patente['id']}", use_container_width=True):
                         if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_SENDO_ELABORADO):
                             st.rerun()
-                # Botão "Para Aprovação" removido daqui - agora só aparece na seção de upload de relatório
-                elif status == patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO:
-                    if st.button("✅ Relatório Aprovado", key=f"aprovado_{patente['id']}"):
-                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_APROVADO):
-                            st.rerun()
-                elif status == patente_manager.STATUS_RELATORIO_APROVADO:
-                    if st.button("🎉 Concluído", key=f"concluido_{patente['id']}"):
-                        if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_CONCLUIDO):
-                            st.rerun()
+            elif status in [patente_manager.STATUS_AGUARDANDO_INFORMACOES, patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO]:
+                # Definir as colunas para outros status
+                col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+                with col1:
+                    if status == patente_manager.STATUS_AGUARDANDO_INFORMACOES:
+                        if st.button("📝 Elaborando Relatório", key=f"elaborando_{patente['id']}"):
+                            if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_RELATORIO_SENDO_ELABORADO):
+                                st.rerun()
+                    # Botão "Para Aprovação" removido daqui - agora só aparece na seção de upload de relatório
 
-            with col2:
-                # Espaço reservado para futuras ações
-                pass
+                with col2:
+                    # Espaço reservado para futuras ações
+                    pass
 
-            with col3:
-                # Espaço reservado para futuras ações
-                pass
+                with col3:
+                    # Espaço reservado para futuras ações
+                    pass
 
-            with col4:
-                # Espaço reservado para futuras ações
-                pass
+                with col4:
+                    # Espaço reservado para futuras ações
+                    pass
+
+        # Botão "Concluído" apenas para consultores no status "Para Aprovação"
+        if is_consultor and status == patente_manager.STATUS_RELATORIO_ENVIADO_APROVACAO:
+            st.markdown("---")
+            st.markdown("**Alterar Status:**")
+            if st.button("🎉 Concluído", key=f"concluido_{patente['id']}", use_container_width=True):
+                if patente_manager.atualizar_status_patente(patente['id'], patente_manager.STATUS_CONCLUIDO):
+                    st.rerun()
+
         # Usuários não-admin não devem ver botões de alteração de status
         # (Removido completamente - não há botões para usuários normais)
 
         st.markdown(
             f"<div style='margin-top:8px;font-weight:600;color:#005fa3;'>Status atual: {status_icon} {status_text}</div>", unsafe_allow_html=True)
+
+
+def renderizar_busca_patente(patente, supabase_agent, is_admin, funcionario=None):
+    """Renderiza uma busca de patente individual na interface."""
+
+    # Determinar se é consultor
+    is_consultor = False
+    consultor_nome = ""
+    try:
+        user_id = st.session_state.user['id'] if isinstance(
+            st.session_state.user, dict) else st.session_state.user.id
+        if patente.get('consultor') == user_id:
+            is_consultor = True
+            consultor_nome = patente.get('name_consultor', '')
+    except:
+        pass
+
+    # Cabeçalho do expansor
+    titulo = patente.get('titulo', 'Sem título')
+    cliente = patente.get('cliente', '')
+    processo = patente.get('processo', '')
+    consultor = patente.get('name_consultor', '')
+
+    expander_label = f"🔍 {titulo} - {cliente}"
+    if processo:
+        expander_label += f" (Proc: {processo})"
+    if consultor:
+        expander_label += f" - {consultor}"
+
+    with st.expander(expander_label):
+        # Exibir dados da patente organizados verticalmente
+        st.markdown(f"**Título:** {patente.get('titulo', '')}")
+        st.markdown(f"**Cliente:** {patente.get('cliente', '')}")
+        if patente.get('processo'):
+            st.markdown(f"**Processo:** {patente.get('processo', '')}")
+        if patente.get('cpf_cnpj'):
+            st.markdown(f"**CPF/CNPJ:** {patente.get('cpf_cnpj', '')}")
+        if patente.get('nome_contato'):
+            st.markdown(
+                f"**Pessoa para contato:** {patente.get('nome_contato', '')}")
+        if patente.get('fone_contato'):
+            st.markdown(f"**Telefone:** {patente.get('fone_contato', '')}")
+        if patente.get('email_contato'):
+            st.markdown(f"**E-mail:** {patente.get('email_contato', '')}")
+        st.markdown(f"**Contrato:** {patente.get('ncontrato', '')}")
+        st.markdown(
+            f"**Vencimento:** {formatar_data_br(patente.get('data_vencimento', ''))}")
+        st.markdown(f"**Natureza:** {patente.get('natureza', '')}")
+        st.markdown(f"**Serviço:** {patente.get('servico', '')}")
+        st.markdown(f"**Funcionário:** {patente.get('name_funcionario', '')}")
+        st.markdown(f"**Consultor:** {patente.get('name_consultor', '')}")
+        if patente.get('observacoes'):
+            st.markdown(f"**Observações:** {patente.get('observacoes', '')}")
+
+        # Exibir links dos arquivos da patente
+        pdfs = patente.get('pdf_patente')
+        if pdfs:
+            st.markdown("---")
+            st.markdown("**📄 Documentos Anexados:**")
+            if isinstance(pdfs, str):
+                try:
+                    import json
+                    pdfs = json.loads(pdfs)
+                except:
+                    pdfs = [pdfs]
+            if isinstance(pdfs, list):
+                for i, url in enumerate(pdfs):
+                    if url:
+                        filename = url.split(
+                            '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
+                        st.markdown(f"• [{filename}]({url})")
+
+        # Exibir documentos da coluna pdf_pendente
+        pdf_pendente = patente.get('pdf_pendente')
+        if pdf_pendente:
+            st.markdown("---")
+            st.markdown("**📄 Documentos - Status Pendente:**")
+            if isinstance(pdf_pendente, str):
+                try:
+                    import json
+                    pdf_pendente = json.loads(pdf_pendente)
+                except:
+                    pdf_pendente = [pdf_pendente]
+            if isinstance(pdf_pendente, list):
+                for i, url in enumerate(pdf_pendente):
+                    if url:
+                        filename = url.split(
+                            '/')[-1] if '/' in url else f"Documento_{i+1}.pdf"
+                        st.markdown(f"• [{filename}]({url})")
+
+        # Upload de documentos para status pendente (consultor e funcionário)
+        status = patente.get('status_patente', 'pendente')
+        if status == 'pendente' and (is_consultor or funcionario):
+            st.markdown("---")
+            st.write("📄 **Adicionar Documentos para Busca de Patente**")
+            st.info("Você pode adicionar documentos relacionados à busca de patente.")
+
+            uploaded_files = st.file_uploader(
+                "Selecione os documentos",
+                type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png",
+                      "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar",
+                      "step", "stp", "igs", "iges", "skp"],
+                accept_multiple_files=True,
+                key=f"docs_busca_patente_{patente['id']}"
+            )
+            if uploaded_files and st.button("Enviar Arquivos", key=f"btn_docs_busca_patente_{patente['id']}"):
+                with st.spinner("Enviando arquivos..."):
+                    if _enviar_documentos_busca_patente(patente, uploaded_files, supabase_agent):
+                        st.success("✅ Arquivos enviados com sucesso!")
+                        st.rerun()
+                    else:
+                        st.error(
+                            "❌ Erro ao enviar arquivos. Verifique os logs.")
 
 
 def _enviar_documentos_consultor_patente(patente, uploaded_files, consultor_nome, patente_manager):
@@ -1007,6 +1301,107 @@ def _enviar_documentos_funcionario_patente(patente, uploaded_files, patente_mana
                 st.warning(
                     f"Documentos enviados, mas houve erro ao enviar notificação por email: {str(e)}")
 
+            return True
+
+    except Exception as e:
+        st.error(f"Erro ao enviar documentos: {str(e)}")
+        return False
+
+
+def _enviar_documentos_busca_patente(patente, uploaded_files, supabase_agent):
+    """Envia documentos para busca de patente (coluna pdf_pendente)"""
+    try:
+        pdf_urls = []
+
+        for uploaded_file in uploaded_files:
+            try:
+                pdf_url = supabase_agent.upload_pdf_to_storage(
+                    uploaded_file,
+                    uploaded_file.name,
+                    st.session_state.jwt_token,
+                    bucket="patentepdf"
+                )
+                if pdf_url:
+                    pdf_urls.append(pdf_url)
+                else:
+                    st.error(
+                        f"Erro ao fazer upload do arquivo {uploaded_file.name}")
+                    return False
+            except Exception as e:
+                st.error(
+                    f"Erro ao fazer upload do arquivo {uploaded_file.name}: {str(e)}")
+                return False
+
+        if pdf_urls:
+            # Atualizar a coluna pdf_pendente
+            success = supabase_agent.update_patente_pdf_pendente(
+                patente['id'],
+                pdf_urls,
+                st.session_state.jwt_token
+            )
+
+            if not success:
+                st.error("Erro ao atualizar documentos no banco de dados")
+                return False
+
+            # Enviar notificação por email se necessário
+            try:
+                from config import carregar_configuracoes
+
+                config = carregar_configuracoes()
+                destinatario_enge = config.get("destinatario_enge", "")
+
+                # Usar o email_agent já configurado no session_state
+                email_agent = st.session_state.get('email_agent')
+                if not email_agent:
+                    st.warning("Email agent não encontrado na sessão")
+                    return False
+
+                # Enviar email para destinatario_enge com anexos
+                if destinatario_enge:
+                    assunto = f"Documentos Adicionados - Busca de Patente {patente.get('titulo', '')}"
+                    corpo = f"""
+                    <div style='font-family: Arial; font-size: 12pt;'>
+                    Olá,<br><br>
+                    Documentos foram adicionados à busca de patente:<br><br>
+                    <b>Dados da patente:</b><br>
+                    - Título: {patente.get('titulo', '')}<br>
+                    - Cliente: {patente.get('cliente', '')}<br>
+                    - Processo: {patente.get('processo', '')}<br>
+                    - Funcionário: {patente.get('name_funcionario', '')}<br>
+                    - Consultor: {patente.get('name_consultor', '')}<br><br>
+                    Os documentos foram adicionados e estão anexados a este e-mail.<br><br>
+                    Atenciosamente,<br>
+                    Equipe AGP Consultoria
+                    </div>
+                    """
+
+                    # Preparar anexos dos documentos
+                    anexos = []
+                    for uploaded_file in uploaded_files:
+                        anexos.append(
+                            (uploaded_file.getvalue(), uploaded_file.name))
+
+                    # Enviar email com anexos
+                    if len(anexos) > 1:
+                        email_agent.send_email_multiplos_anexos(
+                            destinatario_enge,
+                            assunto,
+                            corpo,
+                            anexos
+                        )
+                    else:
+                        email_agent.send_email_com_anexo(
+                            destinatario_enge,
+                            assunto,
+                            corpo,
+                            anexos[0][0],  # bytes do arquivo
+                            anexos[0][1]   # nome do arquivo
+                        )
+            except Exception as e:
+                st.warning(
+                    f"Documentos enviados, mas houve erro ao enviar notificação por email: {str(e)}")
+
         return True
 
     except Exception as e:
@@ -1098,7 +1493,7 @@ def deposito_patente(email_agent):
         observacoes = st.text_area(
             "Observações (opcional)", key=f"observacoes_{nonce}")
         uploaded_files = st.file_uploader(
-            "Documentos da patente", type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png", "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar"], accept_multiple_files=True, key=f"uploaded_files_{nonce}")
+            "Documentos da patente", type=["pdf", "doc", "docx", "txt", "jpg", "jpeg", "png", "gif", "bmp", "mp4", "avi", "mov", "wmv", "zip", "rar", "step", "stp", "igs", "iges", "skp"], accept_multiple_files=True, key=f"uploaded_files_{nonce}")
         submitted = st.form_submit_button("Solicitar Serviço de Patente")
 
     if submitted:
@@ -1253,6 +1648,108 @@ def deposito_patente(email_agent):
         del st.session_state["patente_sucesso"]
 
 
+def _enviar_documentos_pendente_patente(patente, uploaded_files, supabase_agent):
+    """Envia documentos para a coluna pdf_pendente da patente"""
+    try:
+        pdf_urls = []
+
+        for uploaded_file in uploaded_files:
+            try:
+                pdf_url = supabase_agent.upload_pdf_to_storage(
+                    uploaded_file,
+                    uploaded_file.name,
+                    st.session_state.jwt_token,
+                    bucket="patentepdf"
+                )
+                if pdf_url:
+                    pdf_urls.append(pdf_url)
+                else:
+                    st.error(
+                        f"Erro ao fazer upload do arquivo {uploaded_file.name}")
+                    return False
+            except Exception as e:
+                st.error(
+                    f"Erro ao fazer upload do arquivo {uploaded_file.name}: {str(e)}")
+                return False
+
+        if pdf_urls:
+            success = supabase_agent.update_patente_pdf_pendente(
+                patente['id'],
+                pdf_urls,
+                st.session_state.jwt_token
+            )
+
+            if not success:
+                st.error("Erro ao atualizar documentos no banco de dados")
+                return False
+
+            # Enviar notificação por email se necessário
+            try:
+                from config import carregar_configuracoes
+
+                config = carregar_configuracoes()
+                destinatario_enge = config.get("destinatario_enge", "")
+
+                # Usar o email_agent já configurado no session_state
+                email_agent = st.session_state.get('email_agent')
+                if not email_agent:
+                    st.warning("Email agent não encontrado na sessão")
+                    return False
+
+                # Enviar email para destinatario_enge com anexos
+                if destinatario_enge:
+                    assunto = f"Documentos Adicionados (Status Pendente) - Patente {patente.get('titulo', '')}"
+                    corpo = f"""
+                    <div style='font-family: Arial; font-size: 12pt;'>
+                    Olá,<br><br>
+                    Documentos foram adicionados à patente no status "Pendente":<br><br>
+                    <b>Dados da patente:</b><br>
+                    - Título: {patente.get('titulo', '')}<br>
+                    - Cliente: {patente.get('cliente', '')}<br>
+                    - Processo: {patente.get('processo', '')}<br>
+                    - Serviço: {patente.get('servico', '')}<br>
+                    - Contrato: {patente.get('ncontrato', '')}<br>
+                    - Funcionário: {patente.get('name_funcionario', '')}<br>
+                    - Consultor: {patente.get('name_consultor', '')}<br><br>
+                    Os documentos foram adicionados e estão anexados a este e-mail.<br><br>
+                    Atenciosamente,<br>
+                    Equipe AGP Consultoria
+                    </div>
+                    """
+
+                    # Preparar anexos dos documentos
+                    anexos = []
+                    for uploaded_file in uploaded_files:
+                        anexos.append(
+                            (uploaded_file.getvalue(), uploaded_file.name))
+
+                    # Enviar email com anexos
+                    if len(anexos) > 1:
+                        email_agent.send_email_multiplos_anexos(
+                            destinatario_enge,
+                            assunto,
+                            corpo,
+                            anexos
+                        )
+                    else:
+                        email_agent.send_email_com_anexo(
+                            destinatario_enge,
+                            assunto,
+                            corpo,
+                            anexos[0][0],  # bytes do arquivo
+                            anexos[0][1]   # nome do arquivo
+                        )
+            except Exception as e:
+                st.warning(
+                    f"Documentos enviados, mas houve erro ao enviar notificação por email: {str(e)}")
+
+        return True
+
+    except Exception as e:
+        st.error(f"Erro ao enviar documentos: {str(e)}")
+        return False
+
+
 def formatar_data_br(data_iso):
     try:
         if not data_iso:
@@ -1264,3 +1761,145 @@ def formatar_data_br(data_iso):
         return data.strftime('%d/%m/%Y')
     except Exception:
         return str(data_iso)
+
+
+@st.cache_data(ttl=60)  # 1 minuto
+def formatar_mes_ano_cached(data_str: str) -> str:
+    """Cache para formatação de datas para otimizar performance"""
+    return formatar_mes_ano_fallback(data_str)
+
+
+def formatar_mes_ano(data_str):
+    """Formata a data para exibição de mês/ano"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Mapeamento de meses em português
+        meses_pt = {
+            'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março',
+            'April': 'Abril', 'May': 'Maio', 'June': 'Junho',
+            'July': 'Julho', 'August': 'Agosto', 'September': 'Setembro',
+            'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'
+        }
+
+        data = None
+
+        # Tentar diferentes formatos de data
+        try:
+            # Formato ISO com timezone
+            if data_str.endswith('Z'):
+                data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
+            else:
+                # Formato ISO sem timezone
+                data = datetime.fromisoformat(data_str)
+        except ValueError:
+            try:
+                # Formato ISO sem timezone (removendo Z se existir)
+                data = datetime.fromisoformat(data_str.replace('Z', ''))
+            except ValueError:
+                try:
+                    # Formato brasileiro DD/MM/YYYY
+                    if '/' in data_str and len(data_str.split('/')) == 3:
+                        dia, mes, ano = data_str.split('/')
+                        data = datetime(int(ano), int(mes), int(dia))
+                    else:
+                        # Tentar outros formatos comuns
+                        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
+                            try:
+                                data = datetime.strptime(data_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                except Exception:
+                    pass
+
+        if data:
+            mes_ano_en = data.strftime("%B/%Y")
+            mes_en, ano = mes_ano_en.split('/')
+            mes_pt = meses_pt.get(mes_en, mes_en)
+            resultado = f"{mes_pt}/{ano}"
+            return resultado
+        else:
+            return formatar_mes_ano_fallback(data_str)
+
+    except Exception:
+        return formatar_mes_ano_fallback(data_str)
+
+
+def formatar_mes_ano_fallback(data_str):
+    """Função de fallback mais robusta para formatação de data"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Se já é uma string de mês/ano, retornar diretamente
+        if '/' in data_str and len(data_str.split('/')) == 2:
+            return data_str
+
+        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone
+        if isinstance(data_str, str):
+            # Remover timezone e hora se existir
+            data_limpa = data_str.split(
+                'T')[0] if 'T' in data_str else data_str
+            data_limpa = data_limpa.split(
+                ' ')[0] if ' ' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                '+')[0] if '+' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                'Z')[0] if 'Z' in data_limpa else data_limpa
+
+            # Verificar se é formato YYYY-MM-DD
+            if len(data_limpa.split('-')) == 3:
+                ano, mes, dia = data_limpa.split('-')
+                try:
+                    mes_int = int(mes)
+                    ano_int = int(ano)
+
+                    # Mapeamento direto de meses
+                    meses = {
+                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
+                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
+                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+                    }
+
+                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')
+                    return f"{mes_nome}/{ano_int}"
+                except (ValueError, TypeError):
+                    pass
+
+        return "Data não disponível"
+
+    except Exception:
+        return "Data não disponível"
+
+
+def organizar_patentes_por_mes(patentes):
+    """Organiza as patentes por mês/ano de criação"""
+    patentes_por_mes = defaultdict(list)
+
+    for patente in patentes:
+        data_criacao = patente.get('created_at')
+        if data_criacao:
+            mes_ano = formatar_mes_ano_cached(data_criacao)
+            patentes_por_mes[mes_ano].append(patente)
+        else:
+            patentes_por_mes["Data não disponível"].append(patente)
+
+    # Ordenar por data (mais recente primeiro)
+    def ordenar_mes_ano(mes_ano):
+        if mes_ano == "Data não disponível":
+            return "0000-00"
+        try:
+            # Converter "Janeiro/2024" para "2024-01" para ordenação
+            mes, ano = mes_ano.split('/')
+            meses = {
+                'Janeiro': '01', 'Fevereiro': '02', 'Março': '03', 'Abril': '04',
+                'Maio': '05', 'Junho': '06', 'Julho': '07', 'Agosto': '08',
+                'Setembro': '09', 'Outubro': '10', 'Novembro': '11', 'Dezembro': '12'
+            }
+            return f"{ano}-{meses.get(mes, '00')}"
+        except:
+            return "0000-00"
+
+    return dict(sorted(patentes_por_mes.items(), key=lambda x: ordenar_mes_ano(x[0]), reverse=True))

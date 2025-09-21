@@ -262,6 +262,11 @@ def main():
 
     # Verificar permissões antes de renderizar cada página
     if escolha == "Solicitar Busca":
+        # Limpar estados do relatório de custos ao navegar para outras abas
+        from marcas.relatorio_custos import RelatorioCustos
+        relatorio_custos = RelatorioCustos(busca_manager)
+        relatorio_custos.limpar_estados_relatorio()
+
         if not permission_manager.check_page_permission(user_id, "Solicitar Busca"):
             st.error("Você não tem permissão para acessar esta funcionalidade.")
             return
@@ -275,16 +280,26 @@ def main():
                 ok = busca_manager.enviar_busca(form_data)
                 if ok:
                     st.session_state["sucesso"] = True
-                    limpar_formulario()
+                    # Limpar formulário usando a função completa do FormAgent
+                    form_agent.limpar_formulario_completo()
+                    st.success(
+                        "✅ Pedido enviado com sucesso! O formulário foi limpo.")
                     st.rerun()
                 else:
                     st.error("Erro ao enviar pedido. Tente novamente.")
                 st.session_state.enviando_pedido = False
+
+        # Mostrar mensagem de sucesso se necessário
         if st.session_state.get("sucesso"):
-            st.success("Pedido enviado com sucesso! O formulário foi limpo.")
+            st.success("✅ Pedido enviado com sucesso! O formulário foi limpo.")
             del st.session_state["sucesso"]
 
     elif escolha == "Minhas Buscas":
+        # Limpar estados do relatório de custos ao navegar para outras abas
+        from marcas.relatorio_custos import RelatorioCustos
+        relatorio_custos = RelatorioCustos(busca_manager)
+        relatorio_custos.limpar_estados_relatorio()
+
         # Verificar permissões de forma mais suave para evitar redirecionamentos
         try:
             if not permission_manager.check_page_permission(user_id, "Minhas Buscas"):

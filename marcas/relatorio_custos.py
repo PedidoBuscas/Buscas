@@ -12,6 +12,24 @@ class RelatorioCustos:
     def __init__(self, busca_manager):
         self.busca_manager = busca_manager
 
+    def limpar_estados_relatorio(self):
+        """Limpa todos os estados específicos do relatório de custos"""
+        estados_para_limpar = [
+            'relatorio_custos_carregado',
+            'mostrar_detalhamento',
+            'consultor_selecionado',
+            'mes_anterior'
+        ]
+
+        for estado in estados_para_limpar:
+            if estado in st.session_state:
+                del st.session_state[estado]
+
+        # Limpar PDFs gerados
+        for key in list(st.session_state.keys()):
+            if key.startswith('pdf_gerado_'):
+                del st.session_state[key]
+
     def calcular_custo_busca(self, busca: Dict[str, Any]) -> float:
         """
         Calcula o custo de uma busca baseado no número de classes.
@@ -153,7 +171,7 @@ class RelatorioCustos:
         """
         st.header("📊 Relatório de Custos - Análise de Marca")
 
-        # Inicializar estado do relatório
+        # Limpar estados anteriores se necessário
         if 'relatorio_custos_carregado' not in st.session_state:
             st.session_state.relatorio_custos_carregado = False
 
@@ -168,10 +186,10 @@ class RelatorioCustos:
         with st.expander("ℹ️ Política de Custos", expanded=False):
             st.markdown("""
             **Política de Custos para Análise de Marca:**
-            
+
             - **1 marca + 1 classe = R$ 40,00**
             - **Cada classe adicional = +R$ 10,00**
-            
+
             **Exemplos:**
             - 1 marca com 1 classe: R$ 40,00
             - 1 marca com 2 classes: R$ 50,00
@@ -220,207 +238,417 @@ class RelatorioCustos:
                 st.metric("Consultores", len(
                     relatorio['custos_por_consultor_mes']))
 
-            # Detalhamento por consultor
-            st.subheader("👥 Detalhamento por Consultor")
+            # Exportar relatório (apenas para admins) - Movido para cima
+            if is_admin:
+                st.subheader("📤 Exportar Relatório por Mês")
 
-            if not relatorio['custos_por_consultor_mes']:
-                st.info("Nenhum resultado encontrado com os filtros aplicados.")
-                return
+                # Coletar todos os meses disponíveis
+                todos_meses = set()
+                for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+                    todos_meses.update(dados_por_mes.keys())
 
-            # Ordenar consultores por total de custo (maior para menor)
-            consultores_ordenados = sorted(
-                relatorio['custos_por_consultor_mes'].items(),
-                key=lambda x: sum(dados['total_custo']
-                                  for dados in x[1].values()),
-                reverse=True
-            )
+                if todos_meses:
+                    # Ordenar meses cronologicamente
+                    def ordenar_mes_ano_cronologico(mes_ano):
+                        if mes_ano == "Data não disponível":
+                            return "0000-00"
+                        try:
+                            mes, ano = mes_ano.split('/')
+                            meses = {
+                                'Janeiro': '01', 'Fevereiro': '02', 'Março': '03', 'Abril': '04',
+                                'Maio': '05', 'Junho': '06', 'Julho': '07', 'Agosto': '08',
+                                'Setembro': '09', 'Outubro': '10', 'Novembro': '11', 'Dezembro': '12'
+                            }
+                            return f"{ano}-{meses.get(mes, '00')}"
+                        except:
+                            return "0000-00"
 
-            for consultor, dados_por_mes in consultores_ordenados:
-                # Calcular total do consultor
-                total_consultor = sum(dados['total_custo']
-                                      for dados in dados_por_mes.values())
-                total_buscas_consultor = sum(
-                    dados['total_buscas'] for dados in dados_por_mes.values())
+                    meses_ordenados = sorted(
+                        todos_meses, key=ordenar_mes_ano_cronologico, reverse=True)
 
-                with st.expander(f"👤 {consultor} - R$ {total_consultor:.2f}", expanded=True):
-                    col1, col2, col3 = st.columns(3)
+                    # Interface de seleção
+                    col1, col2 = st.columns([2, 1])
 
                     with col1:
-                        st.metric("Total de Buscas", total_buscas_consultor)
+                        mes_selecionado = st.selectbox(
+                            "📅 Selecione o mês para gerar o relatório:",
+                            options=meses_ordenados,
+                            format_func=lambda x: f"{x} ({self._calcular_total_mes(relatorio, x)} buscas - R$ {self._calcular_custo_total_mes(relatorio, x):.2f})",
+                            key="mes_relatorio_export"
+                        )
+
+                        # Gerenciar mudança de mês sem callback
+                        if "mes_anterior" not in st.session_state:
+                            st.session_state.mes_anterior = mes_selecionado
+                        elif st.session_state.mes_anterior != mes_selecionado:
+                            # Limpar PDFs de outros meses
+                            for mes in meses_ordenados:
+                                if mes != mes_selecionado and f"pdf_gerado_{mes}" in st.session_state:
+                                    del st.session_state[f"pdf_gerado_{mes}"]
+                            st.session_state.mes_anterior = mes_selecionado
 
                     with col2:
-                        st.metric("Total de Custo",
-                                  f"R$ {total_consultor:.2f}")
+                        # Espaçamento para alinhar com o label do selectbox
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🔍 Gerar Relatório", key="btn_gerar_relatorio", type="primary"):
+                            if mes_selecionado:
+                                with st.spinner(f"Gerando relatório para {mes_selecionado}..."):
+                                    pdf_data = self.exportar_pdf_mes_especifico(
+                                        relatorio, mes_selecionado)
+                                    if pdf_data:
+                                        st.session_state[f"pdf_gerado_{mes_selecionado}"] = pdf_data
+                                        st.success(
+                                            f"✅ Relatório para {mes_selecionado} gerado com sucesso!")
+                                    else:
+                                        st.error(
+                                            "❌ Erro ao gerar o relatório.")
 
-                    with col3:
-                        if total_buscas_consultor > 0:
-                            custo_medio = total_consultor / total_buscas_consultor
-                            st.metric("Custo Médio", f"R$ {custo_medio:.2f}")
-                        else:
-                            st.metric("Custo Médio", "R$ 0,00")
+                    # Exibir botão de download se o PDF foi gerado
+                    pdf_key = f"pdf_gerado_{mes_selecionado}"
+                    if mes_selecionado and pdf_key in st.session_state and st.session_state[pdf_key] is not None:
+                        st.markdown("---")
+                        st.markdown("### 📄 Relatório Pronto para Download")
 
-                    # Exibir dados por mês
-                    st.markdown("**Detalhamento por Mês:**")
+                        # Mostrar resumo do mês selecionado
+                        total_buscas = self._calcular_total_mes(
+                            relatorio, mes_selecionado)
+                        total_custo = self._calcular_custo_total_mes(
+                            relatorio, mes_selecionado)
+                        total_consultores = self._calcular_consultores_mes(
+                            relatorio, mes_selecionado)
 
-                    # Ordenar meses cronologicamente
-                    meses_ordenados = sorted(
-                        dados_por_mes.items(), key=lambda x: x[0])
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total de Buscas", total_buscas)
+                        with col2:
+                            st.metric("Custo Total", f"R$ {total_custo:.2f}")
+                        with col3:
+                            st.metric("Consultores Ativos", total_consultores)
 
-                    for mes_ano, dados_mes in meses_ordenados:
-                        with st.expander(f"📅 {mes_ano} - R$ {dados_mes['total_custo']:.2f} ({dados_mes['total_buscas']} buscas)", expanded=False):
-                            col1, col2, col3 = st.columns(3)
+                        st.download_button(
+                            label=f"📥 Baixar Relatório - {mes_selecionado}",
+                            data=st.session_state[pdf_key],
+                            file_name=f"relatorio_custos_{mes_selecionado.replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                            mime="application/pdf",
+                            key=f"download_relatorio_{mes_selecionado.replace('/', '_')}",
+                            type="primary"
+                        )
+                else:
+                    st.warning("Nenhum dado disponível para exportação.")
 
-                            with col1:
-                                st.metric("Buscas no Mês",
-                                          dados_mes['total_buscas'])
+            # Seção de pesquisa para detalhamento
+            st.markdown("---")
+            st.subheader("🔍 Pesquisar Detalhamento por Consultor")
 
-                            with col2:
-                                st.metric("Custo do Mês",
-                                          f"R$ {dados_mes['total_custo']:.2f}")
+            # Opções de pesquisa
+            opcoes_consulta = ["Todos os Consultores"] + \
+                list(relatorio['custos_por_consultor_mes'].keys())
+            consultor_pesquisado = st.selectbox(
+                "Selecione o consultor para ver detalhes:",
+                options=opcoes_consulta,
+                key="consultor_pesquisa",
+                help="Escolha um consultor específico ou 'Todos os Consultores' para ver todos"
+            )
 
-                            with col3:
-                                if dados_mes['total_buscas'] > 0:
-                                    custo_medio_mes = dados_mes['total_custo'] / \
-                                        dados_mes['total_buscas']
-                                    st.metric("Custo Médio",
-                                              f"R$ {custo_medio_mes:.2f}")
-                                else:
-                                    st.metric("Custo Médio", "R$ 0,00")
+            # Botão para executar a pesquisa
+            if st.button("🔍 Pesquisar", key="btn_pesquisar_consultor", type="secondary"):
+                st.session_state['mostrar_detalhamento'] = True
+                st.session_state['consultor_selecionado'] = consultor_pesquisado
+                st.rerun()
 
-                            # Tabela com detalhes das buscas do mês
-                            st.markdown("**Detalhes das Buscas:**")
+            # Detalhamento por consultor (só aparece após pesquisa)
+            if st.session_state.get('mostrar_detalhamento', False):
+                consultor_selecionado = st.session_state.get(
+                    'consultor_selecionado', 'Todos os Consultores')
 
-                            if dados_mes['buscas']:
-                                # Criar DataFrame para exibição
-                                import pandas as pd
+                if consultor_selecionado == "Todos os Consultores":
+                    st.subheader("👥 Detalhamento - Todos os Consultores")
+                    consultores_para_mostrar = relatorio['custos_por_consultor_mes']
+                else:
+                    st.subheader(f"👤 Detalhamento - {consultor_selecionado}")
+                    consultores_para_mostrar = {
+                        consultor_selecionado: relatorio['custos_por_consultor_mes'][consultor_selecionado]}
 
-                                df_data = []
-                                for busca in dados_mes['buscas']:
-                                    try:
-                                        # Usar a mesma lógica robusta de formatação de data
-                                        from marcas.views import formatar_mes_ano_cached
+                # Ordenar consultores por total de custo (maior para menor)
+                consultores_ordenados = sorted(
+                    consultores_para_mostrar.items(),
+                    key=lambda x: sum(dados['total_custo']
+                                      for dados in x[1].values()),
+                    reverse=True
+                )
 
-                                        # Tentar formatar a data completa primeiro
-                                        data_busca = datetime.fromisoformat(
-                                            busca['data'].replace('Z', '+00:00'))
-                                        data_formatada = data_busca.strftime(
-                                            '%d/%m/%Y %H:%M')
-                                    except Exception:
-                                        # Se falhar, usar a data original
-                                        data_formatada = busca['data']
+                for idx_consultor, (consultor, dados_por_mes) in enumerate(consultores_ordenados):
+                    # Calcular total do consultor
+                    total_consultor = sum(dados['total_custo']
+                                          for dados in dados_por_mes.values())
+                    total_buscas_consultor = sum(
+                        dados['total_buscas'] for dados in dados_por_mes.values())
 
-                                    df_data.append({
-                                        'Marca': busca['marca'],
-                                        'Custo': f"R$ {busca['custo']:.2f}",
-                                        'Data': data_formatada,
-                                        'Status': busca['status'].title()
-                                    })
+                    with st.expander(f"👤 {consultor} - R$ {total_consultor:.2f}", expanded=True):
+                        col1, col2, col3 = st.columns(3)
 
-                                df = pd.DataFrame(df_data)
+                        with col1:
+                            st.metric("Total de Buscas",
+                                      total_buscas_consultor)
 
-                                # Criar PDF para download do DataFrame
-                                def download_dataframe_as_pdf():
-                                    try:
-                                        from fpdf import FPDF
+                        with col2:
+                            st.metric("Total de Custo",
+                                      f"R$ {total_consultor:.2f}")
 
-                                        pdf = FPDF()
-                                        pdf.add_page()
-                                        pdf.set_font("Arial", size=12)
+                        with col3:
+                            if total_buscas_consultor > 0:
+                                custo_medio = total_consultor / total_buscas_consultor
+                                st.metric("Custo Médio",
+                                          f"R$ {custo_medio:.2f}")
+                            else:
+                                st.metric("Custo Médio", "R$ 0,00")
 
-                                        # Título
-                                        pdf.cell(
-                                            200, 10, txt=f"Detalhes das Buscas - {mes_ano}", ln=True, align='C')
-                                        pdf.cell(
-                                            200, 10, txt=f"Consultor: {consultor}", ln=True, align='C')
-                                        pdf.cell(
-                                            200, 10, txt=f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
-                                        pdf.ln(10)
+                        # Exibir dados por mês
+                        st.markdown("**Detalhamento por Mês:**")
 
-                                        # Resumo
-                                        pdf.cell(
-                                            200, 10, txt=f"Total de Buscas: {dados_mes['total_buscas']}", ln=True)
-                                        pdf.cell(
-                                            200, 10, txt=f"Total do Mês: R$ {dados_mes['total_custo']:.2f}", ln=True)
-                                        pdf.ln(10)
+                        # Ordenar meses cronologicamente
+                        meses_ordenados = sorted(
+                            dados_por_mes.items(), key=lambda x: x[0])
 
-                                        # Cabeçalho da tabela
-                                        pdf.set_font("Arial", 'B', 10)
-                                        pdf.cell(60, 8, txt="Marca", border=1)
-                                        pdf.cell(40, 8, txt="Custo", border=1)
-                                        pdf.cell(50, 8, txt="Data", border=1)
-                                        pdf.cell(40, 8, txt="Status", border=1)
-                                        pdf.ln()
+                        for idx_mes, (mes_ano, dados_mes) in enumerate(meses_ordenados):
+                            with st.expander(f"📅 {mes_ano} - R$ {dados_mes['total_custo']:.2f} ({dados_mes['total_buscas']} buscas)", expanded=False):
+                                col1, col2, col3 = st.columns(3)
 
-                                        # Dados da tabela
-                                        pdf.set_font("Arial", size=9)
-                                        for _, row in df.iterrows():
-                                            pdf.cell(60, 8, txt=str(
-                                                row['Marca'])[:25], border=1)
-                                            pdf.cell(40, 8, txt=str(
-                                                row['Custo']), border=1)
-                                            pdf.cell(50, 8, txt=str(
-                                                row['Data']), border=1)
-                                            pdf.cell(40, 8, txt=str(
-                                                row['Status']), border=1)
+                                with col1:
+                                    st.metric("Buscas no Mês",
+                                              dados_mes['total_buscas'])
+
+                                with col2:
+                                    st.metric("Custo do Mês",
+                                              f"R$ {dados_mes['total_custo']:.2f}")
+
+                                with col3:
+                                    if dados_mes['total_buscas'] > 0:
+                                        custo_medio_mes = dados_mes['total_custo'] / \
+                                            dados_mes['total_buscas']
+                                        st.metric("Custo Médio",
+                                                  f"R$ {custo_medio_mes:.2f}")
+                                    else:
+                                        st.metric("Custo Médio", "R$ 0,00")
+
+                                # Tabela com detalhes das buscas do mês
+                                st.markdown("**Detalhes das Buscas:**")
+
+                                if dados_mes['buscas']:
+                                    # Criar DataFrame para exibição
+                                    import pandas as pd
+
+                                    df_data = []
+                                    for busca in dados_mes['buscas']:
+                                        try:
+                                            # Usar a mesma lógica robusta de formatação de data
+                                            from marcas.views import formatar_mes_ano_cached
+
+                                            # Tentar formatar a data completa primeiro
+                                            data_busca = datetime.fromisoformat(
+                                                busca['data'].replace('Z', '+00:00'))
+                                            data_formatada = data_busca.strftime(
+                                                '%d/%m/%Y %H:%M')
+                                        except Exception:
+                                            # Se falhar, usar a data original
+                                            data_formatada = busca['data']
+
+                                        df_data.append({
+                                            'Marca': busca['marca'],
+                                            'Custo': f"R$ {busca['custo']:.2f}",
+                                            'Data': data_formatada,
+                                            'Status': busca['status'].title()
+                                        })
+
+                                    df = pd.DataFrame(df_data)
+
+                                    # Criar PDF para download do DataFrame
+                                    def download_dataframe_as_pdf():
+                                        try:
+                                            from fpdf import FPDF
+
+                                            pdf = FPDF()
+                                            pdf.add_page()
+                                            pdf.set_font("Arial", size=12)
+
+                                            # Título
+                                            pdf.cell(
+                                                200, 10, txt=f"Detalhes das Buscas - {mes_ano}", ln=True, align='C')
+                                            pdf.cell(
+                                                200, 10, txt=f"Consultor: {consultor}", ln=True, align='C')
+                                            pdf.cell(
+                                                200, 10, txt=f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
+                                            pdf.ln(10)
+
+                                            # Resumo
+                                            pdf.cell(
+                                                200, 10, txt=f"Total de Buscas: {dados_mes['total_buscas']}", ln=True)
+                                            pdf.cell(
+                                                200, 10, txt=f"Total do Mês: R$ {dados_mes['total_custo']:.2f}", ln=True)
+                                            pdf.ln(10)
+
+                                            # Cabeçalho da tabela
+                                            pdf.set_font("Arial", 'B', 10)
+                                            pdf.cell(
+                                                60, 8, txt="Marca", border=1)
+                                            pdf.cell(
+                                                40, 8, txt="Custo", border=1)
+                                            pdf.cell(
+                                                50, 8, txt="Data", border=1)
+                                            pdf.cell(
+                                                40, 8, txt="Status", border=1)
                                             pdf.ln()
 
-                                        return pdf.output(dest='S').encode('latin-1')
-                                    except Exception as e:
-                                        st.error(f"Erro ao gerar PDF: {e}")
-                                        return None
+                                            # Dados da tabela
+                                            pdf.set_font("Arial", size=9)
+                                            for _, row in df.iterrows():
+                                                pdf.cell(60, 8, txt=str(
+                                                    row['Marca'])[:25], border=1)
+                                                pdf.cell(40, 8, txt=str(
+                                                    row['Custo']), border=1)
+                                                pdf.cell(50, 8, txt=str(
+                                                    row['Data']), border=1)
+                                                pdf.cell(40, 8, txt=str(
+                                                    row['Status']), border=1)
+                                                pdf.ln()
 
-                                # Exibir DataFrame
-                                st.dataframe(df, use_container_width=True)
+                                            return pdf.output(dest='S').encode('latin-1')
+                                        except Exception as e:
+                                            st.error(f"Erro ao gerar PDF: {e}")
+                                            return None
 
-                                # CSS para botão branco com letras pretas
-                                st.markdown("""
-                                <style>
-                                .stDownloadButton > button {
-                                    background-color: white !important;
-                                    color: black !important;
-                                    border: 1px solid #ccc !important;
-                                }
-                                .stDownloadButton > button:hover {
-                                    background-color: #f0f0f0 !important;
-                                    color: black !important;
-                                }
-                                </style>
-                                """, unsafe_allow_html=True)
+                                    # Exibir DataFrame
+                                    st.dataframe(df, use_container_width=True)
 
-                                # Botão de download PDF personalizado
-                                pdf_data = download_dataframe_as_pdf()
-                                if pdf_data:
-                                    st.download_button(
-                                        label=f"📄 Baixar PDF - {mes_ano}",
-                                        data=pdf_data,
-                                        file_name=f"detalhes_buscas_{consultor}_{mes_ano}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                                        mime="application/pdf",
-                                        key=f"download_pdf_{mes_ano}_{consultor}",
-                                        use_container_width=True,
-                                        help="Baixar detalhes das buscas em PDF"
-                                    )
-                            else:
-                                st.info(
-                                    "Nenhuma busca encontrada para este mês.")
+                                    # CSS para botão branco com letras pretas
+                                    st.markdown("""
+                                    <style>
+                                    .stDownloadButton > button {
+                                        background-color: white !important;
+                                        color: black !important;
+                                        border: 1px solid #ccc !important;
+                                    }
+                                    .stDownloadButton > button:hover {
+                                        background-color: #f0f0f0 !important;
+                                        color: black !important;
+                                    }
+                                    </style>
+                                    """, unsafe_allow_html=True)
 
-            # Exportar relatório (apenas para admins)
-            if is_admin:
-                st.subheader("📤 Exportar Relatório")
-
-                # Usar download_button em vez de button para evitar reruns
-                pdf_data = self.exportar_pdf_data(relatorio)
-                if pdf_data:
-                    st.download_button(
-                        label="📄 Exportar PDF",
-                        data=pdf_data,
-                        file_name=f"relatorio_custos_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                        mime="application/pdf",
-                        key="download_relatorio_custos"
-                    )
+                                    # Botão de download PDF personalizado
+                                    pdf_data = download_dataframe_as_pdf()
+                                    if pdf_data:
+                                        st.download_button(
+                                            label=f"📄 Baixar PDF - {mes_ano}",
+                                            data=pdf_data,
+                                            file_name=f"detalhes_buscas_{consultor}_{mes_ano}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                            mime="application/pdf",
+                                            key=f"download_pdf_{idx_consultor}_{idx_mes}_{mes_ano}_{consultor}",
+                                            use_container_width=True,
+                                            help="Baixar detalhes das buscas em PDF"
+                                        )
+                                else:
+                                    st.info(
+                                        "Nenhuma busca encontrada para este mês.")
 
         except Exception as e:
             st.error(f"Erro ao gerar relatório: {e}")
             logging.error(f"Erro ao gerar relatório de custos: {e}")
+
+    def _calcular_total_mes(self, relatorio: Dict[str, Any], mes_ano: str) -> int:
+        """Calcula o total de buscas para um mês específico"""
+        total = 0
+        for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+            if mes_ano in dados_por_mes:
+                total += dados_por_mes[mes_ano]['total_buscas']
+        return total
+
+    def _calcular_custo_total_mes(self, relatorio: Dict[str, Any], mes_ano: str) -> float:
+        """Calcula o custo total para um mês específico"""
+        total = 0.0
+        for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+            if mes_ano in dados_por_mes:
+                total += dados_por_mes[mes_ano]['total_custo']
+        return total
+
+    def _calcular_consultores_mes(self, relatorio: Dict[str, Any], mes_ano: str) -> int:
+        """Calcula o número de consultores ativos em um mês específico"""
+        consultores = set()
+        for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+            if mes_ano in dados_por_mes and dados_por_mes[mes_ano]['total_buscas'] > 0:
+                consultores.add(consultor)
+        return len(consultores)
+
+    def exportar_pdf_mes_especifico(self, relatorio: Dict[str, Any], mes_ano: str) -> bytes:
+        """Exporta relatório em formato PDF para um mês específico"""
+        try:
+            from fpdf import FPDF
+
+            # Criar PDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+
+            # Título
+            pdf.cell(
+                200, 10, txt=f"Relatório de Custos - {mes_ano}", ln=1, align="C")
+            pdf.cell(
+                200, 10, txt=f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=1, align="C")
+            pdf.ln(10)
+
+            # Calcular totais do mês
+            total_buscas_mes = self._calcular_total_mes(relatorio, mes_ano)
+            total_custo_mes = self._calcular_custo_total_mes(
+                relatorio, mes_ano)
+            total_consultores_mes = self._calcular_consultores_mes(
+                relatorio, mes_ano)
+
+            # Resumo do mês
+            pdf.set_font("Arial", size=10, style="B")
+            pdf.cell(
+                200, 8, txt=f"Total de Buscas no Mês: {total_buscas_mes}", ln=1)
+            pdf.cell(
+                200, 8, txt=f"Total de Custos no Mês: R$ {total_custo_mes:.2f}", ln=1)
+            pdf.cell(
+                200, 8, txt=f"Consultores Ativos: {total_consultores_mes}", ln=1)
+            pdf.ln(5)
+
+            # Cabeçalho da tabela
+            pdf.set_font("Arial", size=8, style="B")
+            pdf.cell(60, 8, txt="Consultor", border=1)
+            pdf.cell(30, 8, txt="Buscas", border=1)
+            pdf.cell(40, 8, txt="Custo Total", border=1)
+            pdf.cell(40, 8, txt="Custo Médio", border=1)
+            pdf.ln()
+
+            # Dados dos consultores para o mês
+            pdf.set_font("Arial", size=8)
+            consultores_com_dados = []
+            for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+                if mes_ano in dados_por_mes and dados_por_mes[mes_ano]['total_buscas'] > 0:
+                    consultores_com_dados.append(
+                        (consultor, dados_por_mes[mes_ano]))
+
+            # Ordenar por custo decrescente
+            consultores_com_dados.sort(
+                key=lambda x: x[1]['total_custo'], reverse=True)
+
+            for consultor, dados_mes in consultores_com_dados:
+                custo_medio = dados_mes['total_custo'] / \
+                    dados_mes['total_buscas'] if dados_mes['total_buscas'] > 0 else 0.0
+
+                pdf.cell(60, 8, txt=consultor[:25], border=1)
+                pdf.cell(30, 8, txt=str(dados_mes['total_buscas']), border=1)
+                pdf.cell(
+                    40, 8, txt=f"R$ {dados_mes['total_custo']:.2f}", border=1)
+                pdf.cell(40, 8, txt=f"R$ {custo_medio:.2f}", border=1)
+                pdf.ln()
+
+            return pdf.output(dest='S').encode('latin1')
+
+        except Exception as e:
+            logging.error(f"Erro ao gerar PDF para mês {mes_ano}: {e}")
+            return None
 
     def exportar_pdf(self, relatorio: Dict[str, Any]):
         """Exporta o relatório em formato PDF"""
@@ -548,6 +776,119 @@ class RelatorioCustos:
 
         except Exception as e:
             st.error(f"Erro ao exportar PDF: {e}")
+
+    def exportar_pdfs_por_mes(self, relatorio: Dict[str, Any]) -> Dict[str, bytes]:
+        """
+        Exporta relatórios em formato PDF, um para cada mês.
+
+        Args:
+            relatorio: Dados do relatório
+
+        Returns:
+            Dict[str, bytes]: Dicionário com mes_ano como chave e dados do PDF como valor
+        """
+        try:
+            from fpdf import FPDF
+
+            pdfs_por_mes = {}
+
+            # Coletar todos os meses únicos
+            todos_meses = set()
+            for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+                todos_meses.update(dados_por_mes.keys())
+
+            # Ordenar meses cronologicamente
+            def ordenar_mes_ano_cronologico(mes_ano):
+                if mes_ano == "Data não disponível":
+                    return "0000-00"
+                try:
+                    mes, ano = mes_ano.split('/')
+                    meses = {
+                        'Janeiro': '01', 'Fevereiro': '02', 'Março': '03', 'Abril': '04',
+                        'Maio': '05', 'Junho': '06', 'Julho': '07', 'Agosto': '08',
+                        'Setembro': '09', 'Outubro': '10', 'Novembro': '11', 'Dezembro': '12'
+                    }
+                    return f"{ano}-{meses.get(mes, '00')}"
+                except:
+                    return "0000-00"
+
+            meses_ordenados = sorted(
+                todos_meses, key=ordenar_mes_ano_cronologico, reverse=True)
+
+            # Gerar um PDF para cada mês
+            for mes_ano in meses_ordenados:
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
+
+                # Título
+                pdf.cell(
+                    200, 10, txt=f"Relatório de Custos - {mes_ano}", ln=True, align='C')
+                pdf.cell(
+                    200, 10, txt=f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}", ln=True, align='C')
+                pdf.ln(10)
+
+                # Calcular totais do mês
+                total_buscas_mes = 0
+                total_custo_mes = 0.0
+                consultores_mes = []
+
+                for consultor, dados_por_mes in relatorio['custos_por_consultor_mes'].items():
+                    if mes_ano in dados_por_mes:
+                        dados_mes = dados_por_mes[mes_ano]
+                        total_buscas_mes += dados_mes['total_buscas']
+                        total_custo_mes += dados_mes['total_custo']
+                        consultores_mes.append({
+                            'nome': consultor,
+                            'buscas': dados_mes['total_buscas'],
+                            'custo': dados_mes['total_custo'],
+                            'custo_medio': dados_mes['total_custo'] / dados_mes['total_buscas'] if dados_mes['total_buscas'] > 0 else 0
+                        })
+
+                # Resumo do mês
+                pdf.cell(
+                    200, 10, txt=f"Total de Buscas no Mês: {total_buscas_mes}", ln=True)
+                pdf.cell(
+                    200, 10, txt=f"Total de Custos no Mês: R$ {total_custo_mes:.2f}", ln=True)
+                pdf.cell(
+                    200, 10, txt=f"Consultores Ativos: {len(consultores_mes)}", ln=True)
+                pdf.ln(10)
+
+                # Tabela de consultores do mês
+                pdf.set_font("Arial", 'B', 12)
+                pdf.cell(200, 10, txt="Detalhamento por Consultor",
+                         ln=True, align='C')
+                pdf.ln(5)
+
+                # Cabeçalho da tabela
+                pdf.set_font("Arial", 'B', 10)
+                pdf.cell(80, 8, txt="Consultor", border=1)
+                pdf.cell(30, 8, txt="Buscas", border=1)
+                pdf.cell(40, 8, txt="Custo Total", border=1)
+                pdf.cell(40, 8, txt="Custo Médio", border=1)
+                pdf.ln()
+
+                # Dados da tabela
+                pdf.set_font("Arial", size=9)
+                for consultor_data in sorted(consultores_mes, key=lambda x: x['custo'], reverse=True):
+                    pdf.cell(80, 8, txt=consultor_data['nome'][:35], border=1)
+                    pdf.cell(30, 8, txt=str(
+                        consultor_data['buscas']), border=1)
+                    pdf.cell(
+                        40, 8, txt=f"R$ {consultor_data['custo']:.2f}", border=1)
+                    pdf.cell(
+                        40, 8, txt=f"R$ {consultor_data['custo_medio']:.2f}", border=1)
+                    pdf.ln()
+
+                # Salvar PDF
+                pdf_output = pdf.output(dest='S').encode('latin-1')
+                pdfs_por_mes[mes_ano] = pdf_output
+
+            return pdfs_por_mes
+
+        except Exception as e:
+            st.error(f"Erro ao exportar PDFs por mês: {e}")
+            return {}
 
     def exportar_pdf_data(self, relatorio: Dict[str, Any]) -> bytes:
         """Exporta o relatório em formato PDF e retorna os dados"""

@@ -6,6 +6,52 @@ from classificador_agent import buscar_no_classificador
 
 
 class FormAgent:
+    def limpar_formulario_completo(self):
+        """Limpa completamente o formulário e todos os campos relacionados"""
+        # Resetar marcas para estado inicial
+        st.session_state["marcas"] = [
+            {
+                "marca": "",
+                "classes": [
+                    {"classe": "", "especificacao": ""},
+                    {"classe": "", "especificacao": ""},
+                    {"classe": "", "especificacao": ""},
+                    {"classe": "", "especificacao": ""},
+                    {"classe": "", "especificacao": ""}
+                ]
+            }
+        ]
+
+        # Limpar todos os campos do formulário
+        campos_para_limpar = [
+            "enviando_pedido",
+            "cpf_cnpj_cliente",
+            "nome_cliente",
+            "observacao",
+            "data",
+            "envio_sucesso",
+            "last_form_data",
+            "uploaded_file"
+        ]
+
+        for campo in campos_para_limpar:
+            if campo in st.session_state:
+                del st.session_state[campo]
+
+        # Limpar campos dinâmicos
+        chaves_dinamicas = [
+            k for k in list(st.session_state.keys())
+            if isinstance(k, str) and (
+                k.startswith("classe_") or k.startswith("especificacao_") or
+                k.startswith("marca_") or k.startswith("data_") or
+                k.startswith("observacao_") or k.startswith("cpf_cnpj_cliente_") or
+                k.startswith("nome_cliente_")
+            )
+        ]
+
+        for k in chaves_dinamicas:
+            del st.session_state[k]
+
     def collect_data(self):
         """
         Renderiza e gerencia o formulário de solicitação de análise de viabilidade de marca no INPI.
@@ -52,35 +98,37 @@ class FormAgent:
                 </div>
                 ''', unsafe_allow_html=True)
             return
-        # Removido CSS redundante, todo o estilo agora está centralizado no app.py
+
         st.markdown(
             "<h1 style='color:#002060;'>Solicitação de Análise de Viabilidade de Marca no INPI</h1>", unsafe_allow_html=True)
 
-        nonce = st.session_state.get("form_nonce", 0)
-        # --- Estado dinâmico para marcas e classes ---
-        # Garante que marcas sempre começa limpo se não existir
+        # Inicializar marcas com 5 classes fixas
         if "marcas" not in st.session_state:
             st.session_state["marcas"] = [
-                {"marca": "", "classes": [{"classe": "", "especificacao": ""}]}
+                {
+                    "marca": "",
+                    "classes": [
+                        {"classe": "", "especificacao": ""},
+                        {"classe": "", "especificacao": ""},
+                        {"classe": "", "especificacao": ""},
+                        {"classe": "", "especificacao": ""},
+                        {"classe": "", "especificacao": ""}
+                    ]
+                }
             ]
-        if "highlight_classe" not in st.session_state:
-            st.session_state.highlight_classe = None
-        if "highlight_marca" not in st.session_state:
-            st.session_state.highlight_marca = None
-        if "envio_sucesso" not in st.session_state:
-            st.session_state.envio_sucesso = False
+
         marcas = st.session_state.marcas
 
-        # --- Bloco 1: Dados Gerais ---
+        # --- Bloco 1: Dados Gerais (FORA DO FORM) ---
+        st.markdown(
+            '<b style="font-size:1.2rem;color:#002060;">Dados Gerais</b>', unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1.2, 1, 1])
         with col1:
-            data = st.date_input("Data", value=st.session_state.get(
-                "data", date.today()), key=f"data_{nonce}")
+            data = st.date_input(
+                "Data", value=st.session_state.get("data", date.today()))
             data_br = data.strftime("%d/%m/%Y")
         with col2:
-            # Remover selectbox e deixar apenas "Paga" como opção fixa
-            st.text_input("Tipo de Busca", value="Paga",
-                          disabled=True, key=f"tipo_busca_{nonce}")
+            st.text_input("Tipo de Busca", value="Paga", disabled=True)
         with col3:
             consultor_nome = st.session_state.get("consultor_nome", "")
             consultor_email = st.session_state.get("consultor_email", "")
@@ -89,289 +137,226 @@ class FormAgent:
             consultor = consultor_nome
             st.session_state["consultor"] = consultor
 
-        # --- Dados do Cliente ---
-        st.markdown(
-            '<b style="font-size:1.2rem;color:#002060;">Dados do Cliente</b>', unsafe_allow_html=True)
-        col_cliente1, col_cliente2 = st.columns([1, 1])
-        with col_cliente1:
-            cpf_cnpj_cliente = st.text_input(
-                "CPF/CNPJ do Cliente",
-                value=st.session_state.get("cpf_cnpj_cliente", ""),
-                key=f"cpf_cnpj_cliente_{nonce}",
-                placeholder="Digite o CPF ou CNPJ do cliente"
-            )
-        with col_cliente2:
-            nome_cliente = st.text_input(
-                "Nome do Cliente",
-                value=st.session_state.get("nome_cliente", ""),
-                key=f"nome_cliente_{nonce}",
-                placeholder="Digite o nome completo do cliente"
-            )
-
-        st.markdown("""
-    <style>
-    input[disabled], .stTextInput input:disabled {
-        color: #005fa3 !important;  /* Azul escuro, igual ao seu tema */
-        background-color: #fff !important;  /* Fundo branco */
-        opacity: 1 !important;  /* Remove o efeito apagado */
-        font-weight: bold !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-        # --- Bloco 2: Consulta ao Classificador INPI ---
-        st.markdown(
-            '<b style="font-size:1.2rem;color:#002060;">Consulta ao Classificador INPI</b>', unsafe_allow_html=True)
-
-        # Carregar classificador se ainda não foi carregado
-        if "classificador_inpi" not in st.session_state:
-            with st.spinner("Carregando Classificador INPI..."):
-                # carregar_classificador_inpi() # Removido
-                pass  # Mantido para evitar erro se a função for removida
-
-        # Interface de busca
-        col_busca1, col_busca2 = st.columns([2, 1])
-        with col_busca1:
-            termo_busca = st.text_input(
-                "Digite um produto ou serviço para buscar no Classificador INPI:",
-                key=f"termo_busca_classificador_{nonce}",
-                placeholder="Ex: software, roupas, alimentos...",
-                label_visibility="visible"
-            )
-        with col_busca2:
-            st.markdown("<div style='height:1.7em'></div>",
-                        unsafe_allow_html=True)  # Alinha o botão verticalmente
-            if st.button("🔍 Buscar", key=f"btn_buscar_classificador_{nonce}"):
-                if termo_busca.strip():
-                    resultados = buscar_no_classificador(
-                        termo_busca.strip(),
-                        st.session_state.classificador_inpi
-                    )
-                    st.session_state.resultados_busca = resultados
-                    st.session_state.termo_buscado = termo_busca.strip()
-                    st.success(f"Busca realizada por '{termo_busca.strip()}'.")
-                    st.rerun()
-
-        # Exibir resultados da busca
-        if "resultados_busca" in st.session_state:
-            if st.session_state.resultados_busca:
-                agrupados = defaultdict(list)
-                for item in st.session_state.resultados_busca:
-                    agrupados[item['classe']].append(item['especificacao'])
-
-                for classe, especificacoes in sorted(agrupados.items(), key=lambda x: int(x[0])):
-                    with st.expander(f"Classe {classe} ({len(especificacoes)} resultados)", expanded=False):
-                        selecionadas = []
-                        for idx, espec in enumerate(especificacoes):
-                            checked = st.checkbox(
-                                espec, key=f"check_{classe}_{idx}_{nonce}")
-                            if checked:
-                                selecionadas.append((idx, espec))
-                        if selecionadas and st.button(f"Usar essas especificações da classe {classe}", key=f"usar_varias_{classe}_{nonce}"):
-                            marca = st.session_state.marcas[0]
-                            especificacoes_texto = []
-                            for _, espec in selecionadas:
-                                match = re.match(
-                                    r"^(\d{1,2})\s*-\s*(.+)$", espec)
-                                if match:
-                                    especificacoes_texto.append(match.group(2))
-                            nova_especificacao = "\n".join(
-                                especificacoes_texto)
-                            # Verifica se já existem 5 classes preenchidas e a classe não existe
-                            if len([c for c in marca["classes"] if c["classe"].strip()]) >= 5 and not any(c["classe"].strip() == classe for c in marca["classes"]):
-                                st.error(
-                                    "Limite máximo de 5 classes por marca atingido!")
-                            else:
-                                # Verifica se já existe a classe
-                                for c in marca["classes"]:
-                                    if c["classe"].strip() == classe:
-                                        # Concatena se não estiver duplicado
-                                        for espec in especificacoes_texto:
-                                            if espec not in c["especificacao"]:
-                                                if c["especificacao"]:
-                                                    c["especificacao"] += "\n" + espec
-                                                else:
-                                                    c["especificacao"] = espec
-                                        break
-                                else:
-                                    # Não existe a classe, procura a primeira vaga vazia
-                                    for c in marca["classes"]:
-                                        if not c["classe"].strip() and not c["especificacao"].strip():
-                                            c["classe"] = classe
-                                            c["especificacao"] = nova_especificacao
-                                            break
-                                    else:
-                                        # Se não houver vaga vazia, adiciona nova
-                                        marca["classes"].append({
-                                            "classe": classe,
-                                            "especificacao": nova_especificacao
-                                        })
-                            # Limpar os checkboxes removendo as chaves do session_state
-                            for idx, espec in selecionadas:
-                                key = f"check_{classe}_{idx}"
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.success(
-                                f"{len(selecionadas)} especificação(ões) adicionada(s)!")
-                            st.rerun()
-                st.info(
-                    f"Mostrando {len(st.session_state.resultados_busca)} resultados agrupados por classe. Refine sua busca para ver menos resultados.")
-            else:
-                st.warning(
-                    "Nenhum resultado encontrado para sua pesquisa. Tente outro termo!")
-
-        # Botão para limpar resultados
-        if "resultados_busca" in st.session_state and st.session_state.resultados_busca:
-            if st.button("Limpar resultados", key=f"limpar_resultados_{nonce}"):
-                del st.session_state.resultados_busca
-                del st.session_state.termo_buscado
-                st.rerun()
-
+        # --- Bloco 2: Classificador INPI (FORA DO FORM - OTIMIZADO) ---
         st.markdown("---")
-
-        # --- Bloco 3: Marcas, Classes e Especificação ---
         st.markdown(
-            '<b style="font-size:1.2rem;color:#002060;">Marcas, Classes e Especificação</b>', unsafe_allow_html=True)
-        remover_marca_idx = None
-        add_classe_idx = None
-        remover_classe_idx = None
-        for i, marca_dict in enumerate(marcas):
-            # Só renderiza se for o primeiro ou se a marca tiver valor preenchido
-            if i == 0 or marca_dict["marca"].strip() or any(c["classe"].strip() or c["especificacao"].strip() for c in marca_dict["classes"]):
-                mcol1, mcol2 = st.columns([4, 1])
-                with mcol1:
-                    marca_dict["marca"] = st.text_input(
-                        "Marca", value=marca_dict["marca"], key=f"marca_{i}_{nonce}")
-                with mcol2:
-                    pass  # Não exibir botão de remover marca, pois só haverá uma
+            '<b style="font-size:1.2rem;color:#002060;">🔍 Classificador INPI - Consulta de Produtos/Serviços</b>', unsafe_allow_html=True)
+
+        from ui_components import render_classificador_inpi
+        render_classificador_inpi()
+
+        # Formulário principal
+        with st.form("formulario_busca", clear_on_submit=False):
+            # --- Dados do Cliente ---
+            st.markdown(
+                '<b style="font-size:1.2rem;color:#002060;">Dados do Cliente</b>', unsafe_allow_html=True)
+            col_cliente1, col_cliente2 = st.columns([1, 1])
+            with col_cliente1:
+                cpf_cnpj_cliente = st.text_input(
+                    "CPF/CNPJ do Cliente",
+                    value=st.session_state.get("cpf_cnpj_cliente", ""),
+                    placeholder="Digite o CPF ou CNPJ do cliente"
+                )
+            with col_cliente2:
+                nome_cliente = st.text_input(
+                    "Nome do Cliente",
+                    value=st.session_state.get("nome_cliente", ""),
+                    placeholder="Digite o nome completo do cliente"
+                )
+
+            # --- Marcas, Classes e Especificação ---
+            st.markdown(
+                '<b style="font-size:1.2rem;color:#002060;">Marcas, Classes e Especificação</b>', unsafe_allow_html=True)
+
+            # Aplicar especificações automaticamente se necessário
+            if st.session_state.get('aplicar_especificacoes', False) and st.session_state.get('especificacoes_para_aplicar'):
+                # Agrupar especificações por classe
+                classes_agrupadas = {}
+                for item in st.session_state.especificacoes_para_aplicar:
+                    classe = item.get('classe', '')
+                    especificacao = item.get('especificacao', '')
+
+                    # Remover prefixo da classe da especificação (ex: "34 - " -> "")
+                    if especificacao.startswith(f"{classe} - "):
+                        especificacao = especificacao[len(f"{classe} - "):]
+                    elif especificacao.startswith(f"{classe} "):
+                        especificacao = especificacao[len(f"{classe} "):]
+
+                    if classe not in classes_agrupadas:
+                        classes_agrupadas[classe] = []
+                    classes_agrupadas[classe].append(especificacao)
+
+                # Aplicar especificações agrupadas aos campos do formulário
+                for i, marca_dict in enumerate(marcas):
+                    if i == 0:  # Apenas para a primeira marca por enquanto
+                        # Ordenar classes para aplicar de forma consistente
+                        classes_ordenadas = sorted(classes_agrupadas.items())
+
+                        for classe, especificacoes in classes_ordenadas:
+                            # Juntar todas as especificações da mesma classe
+                            especificacoes_juntas = '; '.join(especificacoes)
+
+                            # Verificar se esta classe já existe nos campos
+                            classe_ja_existe = False
+                            for campo in marca_dict["classes"]:
+                                if campo["classe"] == classe:
+                                    # Se a classe já existe, adicionar as especificações ao campo existente
+                                    if campo["especificacao"]:
+                                        campo["especificacao"] += f"; {especificacoes_juntas}"
+                                    else:
+                                        campo["especificacao"] = especificacoes_juntas
+                                    classe_ja_existe = True
+                                    break
+
+                            # Se a classe não existe, procurar um campo vazio
+                            if not classe_ja_existe:
+                                for campo in marca_dict["classes"]:
+                                    if not campo["classe"] and not campo["especificacao"]:
+                                        # Campo vazio encontrado
+                                        campo["classe"] = classe
+                                        campo["especificacao"] = especificacoes_juntas
+                                        break
+
+                # Limpar o flag após aplicar
+                st.session_state.aplicar_especificacoes = False
+                st.session_state.especificacoes_para_aplicar = None
+
+            for i, marca_dict in enumerate(marcas):
+                marca_dict["marca"] = st.text_input(
+                    "Marca", value=marca_dict["marca"], key=f"marca_{i}")
+
                 st.markdown(
                     f"<b>Classes para {marca_dict['marca'] or 'Marca'}</b>", unsafe_allow_html=True)
-                for j, classe_dict in enumerate(marca_dict["classes"]):
-                    classe_val = st.text_input(
-                        f"Classe {j+1} da Marca", value=classe_dict["classe"], key=f"classe_{i}_{j}_{nonce}")
-                    if classe_val and (not re.fullmatch(r"\d{1,2}", classe_val)):
-                        st.error(
-                            "A classe deve conter apenas números e até dois dígitos.")
-                    else:
-                        classe_dict["classe"] = classe_val
-                    classe_dict["especificacao"] = st.text_area(
-                        f"Especificação da Classe {j+1} da Marca", value=classe_dict["especificacao"], key=f"especificacao_{i}_{j}_{nonce}")
-                    # Exibir especificações em linha, separadas por ponto e vírgula, se houver valor
-                    especs = [e.strip() for e in classe_dict["especificacao"].split(
-                        '\n') if e.strip()]
-                    if especs:
-                        especs_str = '; '.join(especs)
+
+                # Renderizar as 5 classes fixas
+                for j in range(5):
+                    # Layout em colunas para classe e especificação lado a lado
+                    col_classe, col_espec = st.columns([1, 3])
+
+                    with col_classe:
+                        classe_val = st.text_input(
+                            f"Classe {j+1}",
+                            value=marca_dict["classes"][j]["classe"],
+                            key=f"classe_{i}_{j}",
+                            help="Digite apenas números entre 1 e 45 (ex: 1, 25, 42)"
+                        )
+                        if classe_val and (not re.fullmatch(r"\d{1,2}", classe_val)):
+                            st.error("Apenas números (1-45)")
+                        elif classe_val and (int(classe_val) < 1 or int(classe_val) > 45):
+                            st.error("Número deve estar entre 1 e 45")
+                        else:
+                            marca_dict["classes"][j]["classe"] = classe_val
+
+                    with col_espec:
+                        marca_dict["classes"][j]["especificacao"] = st.text_area(
+                            f"Especificação {j+1}",
+                            value=marca_dict["classes"][j]["especificacao"],
+                            key=f"especificacao_{i}_{j}",
+                            height=80,  # Altura reduzida
+                            help="Descreva os produtos/serviços desta classe"
+                        )
+
+                        # Exibir especificações em linha, separadas por ponto e vírgula, se houver valor
+                        especs = [e.strip() for e in marca_dict["classes"]
+                                  [j]["especificacao"].split('\n') if e.strip()]
+                        if especs:
+                            especs_str = '; '.join(especs)
+                            st.markdown(
+                                f"<div style='color:#666;font-size:11px;margin-top:2px;'><b>Preview:</b> {especs_str}</div>",
+                                unsafe_allow_html=True
+                            )
+
+                    # Separador visual entre classes
+                    if j < 4:  # Não mostrar separador na última classe
                         st.markdown(
-                            f"<div style='color:#444;font-size:12px;margin-bottom:8px;'><b>Visualização:</b> {especs_str}</div>", unsafe_allow_html=True)
-                    if st.button("➖", key=f"remover_classe_{i}_{j}_{nonce}", help="Remover esta classe", disabled=st.session_state.get('enviando_pedido', False)):
-                        remover_classe_idx = (i, j)
-                # Botão de adicionar classe (máximo 5 classes por marca)
-                if len(marca_dict["classes"]) < 5:
-                    if st.button("➕ Adicionar Classe", key=f"add_classe_{i}_{nonce}", help="Adicionar nova classe para esta marca", disabled=st.session_state.get('enviando_pedido', False)):
-                        add_classe_idx = i
-        # Remover o botão de adicionar nova marca
-        # if st.button("➕ Adicionar Nova Marca", key="add_marca", help="Adicionar mais uma marca"):
-        #     marcas.append({"marca": "", "classes": [{"classe": "", "especificacao": ""}]})
-        #     st.session_state.marcas = marcas
-        #     st.session_state.highlight_marca = len(marcas)-1
-        #     st.rerun()
-        # Manipulação dos botões após o loop
-        if remover_marca_idx is not None:
-            marcas.pop(remover_marca_idx)
-            st.session_state.marcas = marcas
-            st.rerun()
-        if add_classe_idx is not None:
-            marcas[add_classe_idx]["classes"].append(
-                {"classe": "", "especificacao": ""})
-            st.session_state.marcas = marcas
-            st.session_state.highlight_classe = (
-                add_classe_idx, len(marcas[add_classe_idx]["classes"])-1)
-            st.rerun()
-        if remover_classe_idx is not None:
-            i, j = remover_classe_idx
-            if len(marcas[i]["classes"]) > 1:
-                marcas[i]["classes"].pop(j)
-                st.session_state.marcas = marcas
-                st.rerun()
+                            "<hr style='margin: 8px 0; border-color: #e0e0e0;'>", unsafe_allow_html=True)
 
-        # Efeito visual temporário para novo bloco de classe
-        # Removido time.sleep para evitar lentidão
-        # if st.session_state.highlight_classe is not None:
-        #     time.sleep(1)
-        #     st.session_state.highlight_classe = None
-        # if st.session_state.highlight_marca is not None:
-        #     time.sleep(1)
-        #     st.session_state.highlight_marca = None
+            # Campo Observação
+            observacao = st.text_area(
+                "Observação", value=st.session_state.get("observacao", ""))
 
-        # Campo Observação (sempre no final, independente do número de classes)
-        observacao = st.text_area("Observação", value=st.session_state.get(
-            "observacao", ""), key=f"observacao_{nonce}")
+            # --- Upload de Arquivo (NO FINAL) ---
+            st.markdown(
+                '<b style="font-size:1.2rem;color:#002060;">Upload de Arquivo</b>', unsafe_allow_html=True)
+            uploaded_file = st.file_uploader(
+                "Anexar arquivo (opcional)",
+                type=['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'gif'],
+                help="Formatos aceitos: PDF, DOC, DOCX, JPG, JPEG, PNG, GIF"
+            )
 
-        # --- Botão de envio final ---
-        if st.button("Enviar Pedido de Busca", key=f"enviar_final_{nonce}", disabled=st.session_state.get('enviando_pedido', False)):
-            consultor_val = st.session_state.get("consultor", "").strip()
-            if not consultor_val:
-                st.error(
-                    "Por favor, preencha o nome do consultor antes de enviar.")
-                return None
+            # Botão de envio
+            submitted = st.form_submit_button(
+                "Enviar Pedido de Busca", disabled=st.session_state.get('enviando_pedido', False))
 
-            # Validar campos do cliente
-            nome_cliente_val = st.session_state.get(
-                f"nome_cliente_{nonce}", "").strip()
-            if not nome_cliente_val:
-                st.error("Por favor, preencha o nome do cliente antes de enviar.")
-                return None
-
-            # CPF/CNPJ é obrigatório
-            cpf_cnpj_cliente_val = st.session_state.get(
-                f"cpf_cnpj_cliente_{nonce}", "").strip()
-            if not cpf_cnpj_cliente_val:
-                st.error(
-                    "Por favor, preencha o CPF/CNPJ do cliente antes de enviar.")
-                return None
-            for i, marca in enumerate(st.session_state.marcas):
-                # Validar se o nome da marca está preenchido
-                marca_val = st.session_state.get(
-                    f"marca_{i}_{nonce}", "").strip()
-                if not marca_val:
+            if submitted:
+                # Validações
+                if not consultor.strip():
                     st.error(
-                        "Por favor, preencha o nome da marca antes de enviar.")
+                        "Por favor, preencha o nome do consultor antes de enviar.")
                     return None
-                for j, classe in enumerate(marca["classes"]):
-                    classe_val = st.session_state.get(
-                        f"classe_{i}_{j}_{nonce}", "").strip()
-                    especificacao_val = st.session_state.get(
-                        f"especificacao_{i}_{j}_{nonce}", "").strip()
-                    if not classe_val:
-                        st.error("O campo Classe deve ser preenchido.")
-                        return None
-                    if not re.fullmatch(r"\d{1,2}", classe_val):
-                        st.error(
-                            "O campo Classe deve conter apenas números e até dois dígitos.")
-                        return None
-                    if not especificacao_val:
-                        st.error(
-                            "A especificação da classe não pode estar vazia.")
-                        return None
-            # Sincroniza os valores do session_state para o dicionário marcas
-            for i, marca in enumerate(st.session_state.marcas):
-                marca["marca"] = st.session_state.get(f"marca_{i}_{nonce}", "")
-                for j, classe in enumerate(marca["classes"]):
-                    classe["classe"] = st.session_state.get(
-                        f"classe_{i}_{j}_{nonce}", "")
-                    classe["especificacao"] = st.session_state.get(
-                        f"especificacao_{i}_{j}_{nonce}", "")
 
-            # Só definir envio_sucesso = True se todas as validações passaram
-            st.session_state.envio_sucesso = True
-            form_data = {
-                "data": st.session_state.get(f"data_{nonce}", date.today()).strftime("%d/%m/%Y"),
-                "tipo_busca": st.session_state.get(f"tipo_busca_{nonce}", ""),
-                "consultor": consultor_val,
-                "cpf_cnpj_cliente": cpf_cnpj_cliente_val,
-                "nome_cliente": nome_cliente_val,
-                "marcas": st.session_state.marcas,
-                "observacao": st.session_state.get(f"observacao_{nonce}", "")
-            }
-            return form_data
+                if not nome_cliente.strip():
+                    st.error(
+                        "Por favor, preencha o nome do cliente antes de enviar.")
+                    return None
+
+                if not cpf_cnpj_cliente.strip():
+                    st.error(
+                        "Por favor, preencha o CPF/CNPJ do cliente antes de enviar.")
+                    return None
+
+                # Validar marca e classes
+                for i, marca in enumerate(marcas):
+                    marca_val = marca["marca"].strip()
+                    if not marca_val:
+                        st.error(
+                            "Por favor, preencha o nome da marca antes de enviar.")
+                        return None
+
+                    # Verificar se pelo menos uma classe foi preenchida
+                    classes_preenchidas = []
+                    for j, classe in enumerate(marca["classes"]):
+                        classe_val = classe["classe"].strip()
+                        especificacao_val = classe["especificacao"].strip()
+
+                        # Se a classe tem valor, validar
+                        if classe_val or especificacao_val:
+                            if not classe_val:
+                                st.error(
+                                    f"O campo Classe {j+1} deve ser preenchido.")
+                                return None
+                            if not re.fullmatch(r"\d{1,2}", classe_val):
+                                st.error(
+                                    "O campo Classe deve conter apenas números (1-99).")
+                                return None
+                            if int(classe_val) < 1 or int(classe_val) > 45:
+                                st.error(
+                                    "A classe deve ser um número entre 1 e 45.")
+                                return None
+                            if not especificacao_val:
+                                st.error(
+                                    f"A especificação da classe {j+1} não pode estar vazia.")
+                                return None
+                            classes_preenchidas.append(j)
+
+                    # Verificar se pelo menos uma classe foi preenchida
+                    if not classes_preenchidas:
+                        st.error("Pelo menos uma classe deve ser preenchida.")
+                        return None
+
+                # Preparar dados do formulário
+                form_data = {
+                    "data": data.strftime("%d/%m/%Y"),
+                    "tipo_busca": "Paga",
+                    "consultor": consultor,
+                    "cpf_cnpj_cliente": cpf_cnpj_cliente,
+                    "nome_cliente": nome_cliente,
+                    "marcas": marcas,
+                    "observacao": observacao,
+                    "uploaded_file": uploaded_file
+                }
+
+                st.session_state.envio_sucesso = True
+                return form_data
+
         return None

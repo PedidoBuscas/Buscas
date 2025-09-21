@@ -18,7 +18,7 @@ def solicitar_busca(form_agent, busca_manager):
         form_agent.collect_data()  # para garantir overlay
         with st.spinner("Enviando pedido de busca..."):
             pass  # Removido salvamento duplicado
-        st.session_state.enviando_pedido = False
+            st.session_state.enviando_pedido = False
         from ui_components import limpar_formulario
         limpar_formulario()
         st.session_state["form_nonce"] = st.session_state.get(
@@ -27,20 +27,20 @@ def solicitar_busca(form_agent, busca_manager):
     else:
         form_data = form_agent.collect_data()
 
-        if form_data and st.session_state.get('envio_sucesso', False):
-            st.session_state['last_form_data'] = form_data
-            st.session_state.enviando_pedido = True
-            # Enviar busca usando o manager
-            if busca_manager.enviar_busca(form_data):
-                st.success("✅ Busca enviada com sucesso!")
-                # Limpar o estado de sucesso após envio bem-sucedido
-                st.session_state.envio_sucesso = False
-                st.rerun()
-            else:
-                st.error("❌ Erro ao enviar busca!")
-                # Se falhou o envio, resetar o estado
-                st.session_state.enviando_pedido = False
-                st.session_state.envio_sucesso = False
+    if form_data and st.session_state.get('envio_sucesso', False):
+        st.session_state['last_form_data'] = form_data
+        st.session_state.enviando_pedido = True
+        # Enviar busca usando o manager
+        if busca_manager.enviar_busca(form_data):
+            st.success("✅ Busca enviada com sucesso!")
+            # Limpar o estado de sucesso após envio bem-sucedido
+            st.session_state.envio_sucesso = False
+            st.rerun()
+        else:
+            st.error("❌ Erro ao enviar busca!")
+            # Se falhou o envio, resetar o estado
+            st.session_state.enviando_pedido = False
+            st.session_state.envio_sucesso = False
 
 
 @st.cache_data(ttl=60)  # 1 minuto

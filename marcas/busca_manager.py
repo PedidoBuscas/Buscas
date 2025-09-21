@@ -56,20 +56,133 @@ class BuscaManager:
         if "jwt_token" not in st.session_state or not st.session_state.jwt_token:
             st.error("Você precisa estar logado para acessar esta funcionalidade.")
             st.stop()
+
+        # Verificação de segurança: garantir que form_data não contenha objetos não serializáveis
+        def validate_serializable(data, path=""):
+            """Valida se todos os dados são serializáveis em JSON"""
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    current_path = f"{path}.{key}" if path else key
+                    if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                        raise ValueError(
+                            f"Objeto não serializável encontrado em: {current_path}")
+                    validate_serializable(value, current_path)
+            elif isinstance(data, list):
+                for i, item in enumerate(data):
+                    current_path = f"{path}[{i}]"
+                    if hasattr(item, 'getvalue') or hasattr(item, 'read'):
+                        raise ValueError(
+                            f"Objeto não serializável encontrado em: {current_path}")
+                    validate_serializable(item, current_path)
+
+        # Criar cópia limpa dos dados para processamento
         busca_data = dict(form_data)
+
+        # Remover uploaded_file imediatamente para evitar problemas de serialização
+        busca_data.pop("uploaded_file", None)
+
         busca_data["nome_consultor"] = form_data.get("consultor", "")
         busca_data.pop("consultor", None)
 
         if "marcas" in busca_data and busca_data["marcas"]:
             busca_data["marca"] = busca_data["marcas"][0]["marca"]
-            busca_data["classes"] = json.dumps(
-                [c["classe"] for c in busca_data["marcas"][0]["classes"]])
+
+            # Filtrar apenas classes que foram preenchidas
+            classes_preenchidas = []
+            especificacoes_preenchidas = []
+
+            for classe in busca_data["marcas"][0]["classes"]:
+                classe_val = classe.get("classe", "").strip()
+                especificacao_val = classe.get("especificacao", "").strip()
+
+                # Incluir apenas se tanto a classe quanto a especificação foram preenchidas
+                if classe_val and especificacao_val:
+                    classes_preenchidas.append(classe_val)
+                    especificacoes_preenchidas.append(especificacao_val)
+
+            # Salvar apenas as classes e especificações preenchidas
+            busca_data["classes"] = json.dumps(classes_preenchidas)
             busca_data["especificacoes"] = ", ".join(
-                [c["especificacao"] for c in busca_data["marcas"][0]["classes"]])
+                especificacoes_preenchidas)
+
+        # Processar arquivo de upload se existir
+        uploaded_file = form_data.get("uploaded_file")
+        if uploaded_file:
+            try:
+                # Manter o nome original do arquivo, apenas adicionar timestamp para evitar conflitos
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                original_filename = uploaded_file.name
+
+                # Separar nome e extensão
+                if '.' in original_filename:
+                    name_part = original_filename.rsplit('.', 1)[0]
+                    extension = original_filename.rsplit('.', 1)[1]
+                    file_name = f"{name_part}_{timestamp}.{extension}"
+                else:
+                    file_name = f"{original_filename}_{timestamp}"
+
+                # Upload para o storage buscaspdf
+                logo_url = self.supabase_agent.upload_file_to_storage(
+                    uploaded_file,
+                    file_name,
+                    st.session_state.jwt_token,
+                    bucket="buscaspdf"
+                )
+
+                if logo_url:
+                    busca_data["logo"] = logo_url
+                    logging.info(f"Arquivo enviado com sucesso: {logo_url}")
+                else:
+                    st.warning(
+                        "Erro ao fazer upload do arquivo. A busca será salva sem o arquivo.")
+                    logging.error("Erro ao fazer upload do arquivo")
+            except Exception as e:
+                st.warning(
+                    f"Erro ao processar arquivo: {e}. A busca será salva sem o arquivo.")
+                logging.error(f"Erro ao processar arquivo: {e}")
+
+        # Função para limpar dados antes da serialização JSON
+        def clean_data_for_json(data):
+            """Remove objetos não serializáveis do dicionário"""
+            if isinstance(data, dict):
+                cleaned = {}
+                for key, value in data.items():
+                    # Pular objetos UploadedFile e outros não serializáveis
+                    if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                        continue
+                    elif isinstance(value, (dict, list)):
+                        cleaned[key] = clean_data_for_json(value)
+                    elif isinstance(value, (str, int, float, bool, type(None))):
+                        cleaned[key] = value
+                    else:
+                        # Converter outros tipos para string
+                        cleaned[key] = str(value)
+                return cleaned
+            elif isinstance(data, list):
+                return [clean_data_for_json(item) for item in data if not hasattr(item, 'getvalue')]
+            else:
+                return data
+
+        # Remover outros objetos não serializáveis
+        for key in list(busca_data.keys()):
+            value = busca_data[key]
+            if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                busca_data.pop(key, None)
+
+        # Limpar dados para serialização JSON
+        form_data_limpo = clean_data_for_json(busca_data)
+
+        # Validação final antes da serialização
+        try:
+            validate_serializable(form_data_limpo)
+        except ValueError as e:
+            logging.error(f"Erro de validação de serialização: {e}")
+            st.error(f"Erro interno: dados não serializáveis detectados. {e}")
+            return None
 
         # Salvar o dicionário completo no campo dados_completos
         busca_data["dados_completos"] = json.dumps(
-            form_data, ensure_ascii=False)
+            form_data_limpo, ensure_ascii=False)
         busca_data["consultor_id"] = get_user_id(st.session_state.user)
         if busca_data["consultor_id"]:
             busca_data["consultor_id"] = clean_id(busca_data["consultor_id"])
@@ -100,22 +213,78 @@ class BuscaManager:
         try:
             # Processar dados para salvar
             busca_data = self.processar_form_data(form_data)
-            logging.info(f"Debug: Dados processados para busca")
 
             # Adicionar e-mail do consultor para o e-mail
-            form_data["consultor_email"] = st.session_state.get(
+            # Criar uma cópia limpa do form_data para evitar problemas de serialização
+            form_data_limpo = dict(form_data)
+            form_data_limpo["consultor_email"] = st.session_state.get(
                 "consultor_email", "")
 
-            # Enviar e-mail
+            # Remover objetos não serializáveis do form_data_limpo
+            for key in list(form_data_limpo.keys()):
+                value = form_data_limpo[key]
+                if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                    form_data_limpo.pop(key, None)
+
+            # Enviar e-mail com anexo se houver arquivo
             with st.spinner("Enviando e-mail..."):
-                self.email_agent.send_email(form_data)
+                uploaded_file = form_data.get("uploaded_file")
+                if uploaded_file:
+                    # Preparar dados para e-mail com anexo
+                    tipo_busca = form_data_limpo.get('tipo_busca', '')
+                    consultor = form_data_limpo.get('consultor', '')
+                    cpf_cnpj_cliente = form_data_limpo.get(
+                        'cpf_cnpj_cliente', '')
+                    nome_cliente = form_data_limpo.get('nome_cliente', '')
+                    marcas = form_data_limpo.get('marcas', [])
+                    nome_marca = ''
+                    classes = ''
+                    if marcas and isinstance(marcas, list) and len(marcas) > 0 and isinstance(marcas[0], dict):
+                        nome_marca = marcas[0].get('marca', '')
+                        classes = ', '.join([c.get('classe', '') for c in marcas[0].get(
+                            'classes', []) if c.get('classe', '')])
+                    data_br = form_data_limpo.get('data', '')
+
+                    subject = f"Pedido de busca de marca {tipo_busca} - Data: {data_br} - Marca: {nome_marca} - Classes: {classes} - Cliente: {nome_cliente} - Consultor: {consultor}"
+
+                    # Criar form_data sem o arquivo para o e-mail
+                    form_data_email = dict(form_data_limpo)
+                    form_data_email.pop("uploaded_file", None)
+                    body_html = self.email_agent.format_body_html(
+                        form_data_email)
+
+                    # Enviar e-mail com anexo para cada destinatário
+                    if self.email_agent.destinatarios:
+                        for destinatario in self.email_agent.destinatarios:
+                            self.email_agent.send_email_com_anexo(
+                                destinatario,
+                                subject,
+                                body_html,
+                                uploaded_file.getvalue(),
+                                uploaded_file.name
+                            )
+                    else:
+                        st.warning(
+                            "Nenhum destinatário configurado para envio de e-mail")
+                else:
+                    # Enviar e-mail sem anexo
+                    # Criar form_data limpo para o e-mail
+                    form_data_email = dict(form_data_limpo)
+                    form_data_email.pop("uploaded_file", None)
+                    self.email_agent.send_email(form_data_email)
 
             # Salvar no banco
             ok = self.supabase_agent.insert_busca_rest(
                 busca_data, st.session_state.jwt_token)
 
             if ok:
-                st.success("Busca salva no Supabase!")
+                # Enviar e-mail de confirmação para o consultor
+                consultor_email = st.session_state.get("consultor_email", "")
+                if consultor_email:
+                    self.email_agent.send_email_confirmacao_consultor(
+                        consultor_email, form_data_limpo)
+
+                st.success("✅ E-mail enviado com sucesso!")
                 return True
             else:
                 st.error("Erro ao salvar busca no Supabase!")
@@ -256,6 +425,19 @@ class BuscaManager:
             elif "marcas" in busca and "especificacoes" in busca:
                 self._exibir_dados_tradicionais(busca)
 
+            # Exibir arquivo de logo se existir
+            if busca.get('logo'):
+                st.markdown("**Arquivo Anexado:**")
+                logo_url = busca.get('logo', '')
+                if isinstance(logo_url, str) and logo_url:
+                    filename = logo_url.split(
+                        '/')[-1] if '/' in logo_url else logo_url
+                    st.markdown(
+                        f"[📎 {filename}]({logo_url})", unsafe_allow_html=True)
+                else:
+                    st.markdown(
+                        f"[📎 Arquivo anexado]({logo_url})", unsafe_allow_html=True)
+
             if busca.get('observacao'):
                 st.write(f"Observação: {busca.get('observacao')}")
 
@@ -374,10 +556,19 @@ class BuscaManager:
             for i, marca in enumerate(dados.get("marcas", [])):
                 st.markdown(
                     f"<b>Marca:</b> {marca.get('marca', '')}", unsafe_allow_html=True)
-                for classe in marca.get("classes", []):
-                    classe_num = classe.get("classe", "")
-                    especificacao = classe.get("especificacao", "")
 
+                # Filtrar apenas classes que foram preenchidas
+                classes_preenchidas = []
+                for classe in marca.get("classes", []):
+                    classe_num = classe.get("classe", "").strip()
+                    especificacao = classe.get("especificacao", "").strip()
+
+                    # Incluir apenas se tanto a classe quanto a especificação foram preenchidas
+                    if classe_num and especificacao:
+                        classes_preenchidas.append((classe_num, especificacao))
+
+                # Exibir apenas as classes preenchidas
+                for jdx, (classe_num, especificacao) in enumerate(classes_preenchidas, 1):
                     if isinstance(especificacao, list):
                         especs = [e.strip()
                                   for e in especificacao if e.strip()]

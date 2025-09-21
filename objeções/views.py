@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import unicodedata
 import re
+from collections import defaultdict
 
 
 class ObjecaoManager:
@@ -152,7 +153,7 @@ class ObjecaoManager:
             emails_enviados = []
 
             if tipo_usuario == "advogado":
-                # Advogados enviam e-mail para o funcionário e para aprov_teor
+                # Advogados enviam e-mail apenas para o funcionário responsável
                 juridico_id = objecao.get('juridico_id')
 
                 # 1. Enviar para o funcionário responsável
@@ -178,28 +179,6 @@ class ObjecaoManager:
                 else:
                     st.warning("ID do funcionário não encontrado na objeção.")
 
-                # 2. Enviar para usuários com cargo aprova_teor
-                try:
-                    juridicos_aprov_teor = self.supabase_agent.get_juridicos_por_cargo(
-                        'aprova_teor')
-
-                    if juridicos_aprov_teor:
-                        for juridico in juridicos_aprov_teor:
-                            email_aprov_teor = juridico.get('email')
-                            if email_aprov_teor and email_aprov_teor != 'N/A':
-                                resultado = self.email_agent.enviar_email_objecao_aprov_teor(
-                                    email_aprov_teor, objecao, anexos, self.supabase_agent)
-
-                                if resultado:
-                                    emails_enviados.append(
-                                        f"aprova_teor ({email_aprov_teor})")
-                    else:
-                        st.info(
-                            "Nenhum usuário com cargo 'aprova_teor' encontrado.")
-
-                except Exception as e:
-                    st.warning(
-                        f"Erro ao enviar e-mail para aprova_teor: {str(e)}")
             else:
                 # Funcionários enviam e-mails para consultor e destinatários jurídicos
                 emails_enviados = self.email_agent.enviar_emails_objecao_completa(
@@ -366,7 +345,8 @@ def solicitar_objecao(email_agent):
             "MANIFESTAÇÃO SOBRE PARECER PROFERIDO EM GRAU DE RECURSO",
             "RECURSO CONTRA INDEFERIMENTO DE PEDIDO DE REGISTRO DE MARCA",
             "NOTIFICAÇÃO EXTRAJUDICIAL",
-            "ELABORAÇÃO DE CONTRATO"
+            "ELABORAÇÃO DE CONTRATO",
+            "CUMPRIMENTO DE EXIGÊNCIA"
         ]
 
     # Inicializar dados do formulário
@@ -377,6 +357,7 @@ def solicitar_objecao(email_agent):
         st.session_state.form_data = {
             "marca": "",
             "nomecliente": "",
+            "cnpj_cpf_cliente": "",
             "vencimento": None,
             "servicocontrato": "",
             "observacao": "",
@@ -424,6 +405,9 @@ def solicitar_objecao(email_agent):
         nomecliente = st.text_input(
             "Nome do Cliente", key=f"nomecliente_{st.session_state.form_key}",
             value=st.session_state.form_data["nomecliente"])
+        cnpj_cpf_cliente = st.text_input(
+            "CPF/CNPJ do Cliente", key=f"cnpj_cpf_cliente_{st.session_state.form_key}",
+            value=st.session_state.form_data.get("cnpj_cpf_cliente", ""))
         vencimento = st.date_input(
             "Data de Vencimento", key=f"vencimento_{st.session_state.form_key}",
             value=st.session_state.form_data["vencimento"])
@@ -535,6 +519,7 @@ def solicitar_objecao(email_agent):
                 "marca": marca,
                 "servico": servicocontrato,  # Valor do selectbox vai para a coluna 'servico'
                 "nomecliente": nomecliente,
+                "cnpj_cpf_cliente": cnpj_cpf_cliente,
                 "vencimento": vencimento.isoformat() if vencimento else None,
                 "servicocontrato": servicocontrato,
                 "observacao": observacao,
@@ -685,6 +670,10 @@ def minhas_objecoes(email_agent):
         st.session_state.supabase_agent)
     user_id = get_user_id(st.session_state.user)
 
+    # Verificar se é funcionário e se tem permissões de admin
+    funcionario = st.session_state.supabase_agent.get_funcionario_by_id(
+        user_id)
+
     # Para objeções: APENAS usuários com is_admin=True na tabela juridico
     juridico = st.session_state.supabase_agent.get_juridico_by_id(user_id)
     is_admin = juridico and juridico.get('is_admin', False)
@@ -712,6 +701,44 @@ def minhas_objecoes(email_agent):
     if not objecoes:
         st.info("Nenhuma objeção encontrada.")
         return
+
+    # Adicionar filtro por consultor para administradores e funcionários
+    is_funcionario = funcionario and funcionario.get(
+        'cargo_func', '') == 'funcionario'
+    if is_admin or is_funcionario:
+        st.subheader("Filtros")
+
+        # Buscar nomes únicos de consultores das objeções existentes
+        consultor_nomes_unicos = set()
+        for objecao in objecoes:
+            consultor_nome = objecao.get(
+                'name_consultor', '') or objecao.get('consultor_objecao', '')
+            if consultor_nome:
+                consultor_nomes_unicos.add(consultor_nome)
+
+        consultor_nomes = ["Todos os consultores"] + \
+            sorted(list(consultor_nomes_unicos))
+
+        consultor_filtro = st.selectbox(
+            "Filtrar por consultor:",
+            consultor_nomes,
+            key="filtro_consultor_objecoes"
+        )
+
+        # Filtrar objeções por consultor se selecionado
+        if consultor_filtro and consultor_filtro != "Todos os consultores":
+            objecoes_filtradas = []
+            for objecao in objecoes:
+                consultor_objecao = objecao.get(
+                    'name_consultor', '') or objecao.get('consultor_objecao', '')
+                if consultor_objecao == consultor_filtro:
+                    objecoes_filtradas.append(objecao)
+            objecoes = objecoes_filtradas
+
+            if not objecoes:
+                st.info(
+                    f"Nenhuma objeção encontrada para o consultor: {consultor_filtro}")
+                return
 
     # Inicializar manager
     objecao_manager = ObjecaoManager(
@@ -743,8 +770,31 @@ def minhas_objecoes(email_agent):
                 st.info(f"Nenhuma objeção {status}.")
                 continue
 
-            for objecao in objecoes_list:
-                renderizar_objecao(objecao, objecao_manager, is_admin)
+            # Verificar se é a aba "Concluído"
+            if status == objecao_manager.STATUS_CONCLUIDO:
+                # Organizar por mês primeiro, depois por consultor (apenas para Concluídas)
+                objecoes_por_mes = organizar_objecoes_por_mes(objecoes_list)
+
+                for mes_ano, objecoes_do_mes in objecoes_por_mes.items():
+                    with st.expander(f"📅 {mes_ano} ({len(objecoes_do_mes)} objeções)"):
+                        # Agrupar por consultor dentro do mês
+                        objecoes_por_consultor = defaultdict(list)
+                        for objecao in objecoes_do_mes:
+                            nome = objecao.get('name_consultor', objecao.get(
+                                'consultor_objecao', 'Sem Consultor'))
+                            objecoes_por_consultor[nome].append(objecao)
+
+                        # Ordenar consultores alfabeticamente
+                        for consultor in sorted(objecoes_por_consultor.keys()):
+                            objecoes_do_consultor = objecoes_por_consultor[consultor]
+                            with st.expander(f"👤 {consultor} ({len(objecoes_do_consultor)})"):
+                                for objecao in objecoes_do_consultor:
+                                    renderizar_objecao(
+                                        objecao, objecao_manager, is_admin)
+            else:
+                # Para outros status, manter organização normal
+                for objecao in objecoes_list:
+                    renderizar_objecao(objecao, objecao_manager, is_admin)
 
 
 def renderizar_objecao(objecao, objecao_manager, is_admin):
@@ -774,6 +824,8 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
         # Informações básicas organizadas (uma abaixo da outra)
         st.write(f"**Marca:** {objecao.get('marca', 'N/A')}")
         st.write(f"**Cliente:** {objecao.get('nomecliente', 'N/A')}")
+        if objecao.get('cnpj_cpf_cliente'):
+            st.write(f"**CPF/CNPJ:** {objecao.get('cnpj_cpf_cliente', 'N/A')}")
         st.write(f"**Serviço:** {objecao.get('servico', 'N/A')}")
         if objecao.get('created_at'):
             data_criacao = formatar_data_br(objecao['created_at'])
@@ -919,7 +971,7 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
                                 if objecao_manager.enviar_documentos_objecao(
                                         objecao, uploaded_files, tipo_usuario="advogado"):
                                     st.success(
-                                        "📄 Arquivos enviados com sucesso! E-mails enviados para funcionário e aprova_teor")
+                                        "📄 Arquivos enviados com sucesso! E-mail enviado para funcionário responsável")
 
                                     # Alterar status automaticamente para "Concluída" quando advogado envia petições
                                     try:
@@ -931,6 +983,10 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
                                         st.warning(
                                             f"Petições enviadas, mas erro ao alterar status: {str(e)}")
 
+                                    # Limpar o upload após envio bem-sucedido
+                                    upload_key = f"upload_peticoes_{objecao['id']}"
+                                    if upload_key in st.session_state:
+                                        del st.session_state[upload_key]
                                     st.rerun()
                                 else:
                                     st.error(
@@ -958,6 +1014,10 @@ def renderizar_objecao(objecao, objecao_manager, is_admin):
                                         objecao, uploaded_files, tipo_usuario="funcionario"):
                                     st.success(
                                         "📎 Arquivos enviados com sucesso! E-mails enviados para consultor e destinatários jurídicos.")
+                                    # Limpar o upload após envio bem-sucedido
+                                    upload_key = f"upload_docs_{objecao['id']}"
+                                    if upload_key in st.session_state:
+                                        del st.session_state[upload_key]
                                     st.rerun()
                                 else:
                                     st.error(
@@ -971,3 +1031,145 @@ def formatar_data_br(data_iso):
         return data.strftime("%d/%m/%Y %H:%M")
     except:
         return data_iso
+
+
+@st.cache_data(ttl=60)  # 1 minuto
+def formatar_mes_ano_cached(data_str: str) -> str:
+    """Cache para formatação de datas para otimizar performance"""
+    return formatar_mes_ano_fallback(data_str)
+
+
+def formatar_mes_ano(data_str):
+    """Formata a data para exibição de mês/ano"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Mapeamento de meses em português
+        meses_pt = {
+            'January': 'Janeiro', 'February': 'Fevereiro', 'March': 'Março',
+            'April': 'Abril', 'May': 'Maio', 'June': 'Junho',
+            'July': 'Julho', 'August': 'Agosto', 'September': 'Setembro',
+            'October': 'Outubro', 'November': 'Novembro', 'December': 'Dezembro'
+        }
+
+        data = None
+
+        # Tentar diferentes formatos de data
+        try:
+            # Formato ISO com timezone
+            if data_str.endswith('Z'):
+                data = datetime.fromisoformat(data_str.replace('Z', '+00:00'))
+            else:
+                # Formato ISO sem timezone
+                data = datetime.fromisoformat(data_str)
+        except ValueError:
+            try:
+                # Formato ISO sem timezone (removendo Z se existir)
+                data = datetime.fromisoformat(data_str.replace('Z', ''))
+            except ValueError:
+                try:
+                    # Formato brasileiro DD/MM/YYYY
+                    if '/' in data_str and len(data_str.split('/')) == 3:
+                        dia, mes, ano = data_str.split('/')
+                        data = datetime(int(ano), int(mes), int(dia))
+                    else:
+                        # Tentar outros formatos comuns
+                        for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S']:
+                            try:
+                                data = datetime.strptime(data_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                except Exception:
+                    pass
+
+        if data:
+            mes_ano_en = data.strftime("%B/%Y")
+            mes_en, ano = mes_ano_en.split('/')
+            mes_pt = meses_pt.get(mes_en, mes_en)
+            resultado = f"{mes_pt}/{ano}"
+            return resultado
+        else:
+            return formatar_mes_ano_fallback(data_str)
+
+    except Exception:
+        return formatar_mes_ano_fallback(data_str)
+
+
+def formatar_mes_ano_fallback(data_str):
+    """Função de fallback mais robusta para formatação de data"""
+    try:
+        if not data_str:
+            return "Data não disponível"
+
+        # Se já é uma string de mês/ano, retornar diretamente
+        if '/' in data_str and len(data_str.split('/')) == 2:
+            return data_str
+
+        # Tentar extrair apenas a data (YYYY-MM-DD) ignorando timezone
+        if isinstance(data_str, str):
+            # Remover timezone e hora se existir
+            data_limpa = data_str.split(
+                'T')[0] if 'T' in data_str else data_str
+            data_limpa = data_limpa.split(
+                ' ')[0] if ' ' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                '+')[0] if '+' in data_limpa else data_limpa
+            data_limpa = data_limpa.split(
+                'Z')[0] if 'Z' in data_limpa else data_limpa
+
+            # Verificar se é formato YYYY-MM-DD
+            if len(data_limpa.split('-')) == 3:
+                ano, mes, dia = data_limpa.split('-')
+                try:
+                    mes_int = int(mes)
+                    ano_int = int(ano)
+
+                    # Mapeamento direto de meses
+                    meses = {
+                        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
+                        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
+                        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+                    }
+
+                    mes_nome = meses.get(mes_int, f'Mês {mes_int}')
+                    return f"{mes_nome}/{ano_int}"
+                except (ValueError, TypeError):
+                    pass
+
+        return "Data não disponível"
+
+    except Exception:
+        return "Data não disponível"
+
+
+def organizar_objecoes_por_mes(objecoes):
+    """Organiza as objeções por mês/ano de criação"""
+    objecoes_por_mes = defaultdict(list)
+
+    for objecao in objecoes:
+        data_criacao = objecao.get('created_at')
+        if data_criacao:
+            mes_ano = formatar_mes_ano_cached(data_criacao)
+            objecoes_por_mes[mes_ano].append(objecao)
+        else:
+            objecoes_por_mes["Data não disponível"].append(objecao)
+
+    # Ordenar por data (mais recente primeiro)
+    def ordenar_mes_ano(mes_ano):
+        if mes_ano == "Data não disponível":
+            return "0000-00"
+        try:
+            # Converter "Janeiro/2024" para "2024-01" para ordenação
+            mes, ano = mes_ano.split('/')
+            meses = {
+                'Janeiro': '01', 'Fevereiro': '02', 'Março': '03', 'Abril': '04',
+                'Maio': '05', 'Junho': '06', 'Julho': '07', 'Agosto': '08',
+                'Setembro': '09', 'Outubro': '10', 'Novembro': '11', 'Dezembro': '12'
+            }
+            return f"{ano}-{meses.get(mes, '00')}"
+        except:
+            return "0000-00"
+
+    return dict(sorted(objecoes_por_mes.items(), key=lambda x: ordenar_mes_ano(x[0]), reverse=True))

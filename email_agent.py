@@ -3,6 +3,354 @@ import smtplib
 from email.message import EmailMessage
 import logging
 import re
+import imaplib
+import email
+from email.header import decode_header
+from email.utils import parsedate_to_datetime
+import os
+from datetime import datetime, timedelta
+
+
+class IMAPAgent:
+    """Agente para gerenciar conexões IMAP e leitura de e-mails"""
+
+    def __init__(self, imap_host, imap_port, imap_user, imap_pass):
+        """
+        Inicializa o agente IMAP com as configurações do servidor.
+
+        Args:
+            imap_host: Servidor IMAP (ex: imap.hostinger.com)
+            imap_port: Porta IMAP (ex: 993 para SSL)
+            imap_user: Usuário/e-mail
+            imap_pass: Senha
+        """
+        self.imap_host = imap_host
+        self.imap_port = imap_port
+        self.imap_user = imap_user
+        self.imap_pass = imap_pass
+        self.connection = None
+
+    def conectar(self):
+        """Conecta ao servidor IMAP"""
+        try:
+            if self.imap_port == 993:
+                # Usar SSL para porta 993
+                self.connection = imaplib.IMAP4_SSL(
+                    self.imap_host, self.imap_port)
+            else:
+                # Usar conexão normal para outras portas
+                self.connection = imaplib.IMAP4(self.imap_host, self.imap_port)
+                self.connection.starttls()
+
+            # Fazer login
+            self.connection.login(self.imap_user, self.imap_pass)
+            st.success(
+                f"Conectado ao servidor IMAP: {self.imap_host}:{self.imap_port}")
+            return True
+
+        except Exception as e:
+            st.error(f"Erro ao conectar ao servidor IMAP: {e}")
+            logging.error(f"Erro ao conectar ao servidor IMAP: {e}")
+            return False
+
+    def desconectar(self):
+        """Desconecta do servidor IMAP"""
+        if self.connection:
+            try:
+                self.connection.logout()
+                self.connection = None
+                st.info("Desconectado do servidor IMAP")
+            except Exception as e:
+                st.warning(f"Erro ao desconectar: {e}")
+
+    def listar_caixas(self):
+        """Lista todas as caixas de entrada disponíveis"""
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return []
+
+        try:
+            status, caixas = self.connection.list()
+            if status == 'OK':
+                caixas_list = []
+                for caixa in caixas:
+                    # Decodificar nome da caixa
+                    caixa_decoded = caixa.decode('utf-8')
+                    caixas_list.append(caixa_decoded)
+                return caixas_list
+            else:
+                st.error("Erro ao listar caixas de entrada")
+                return []
+        except Exception as e:
+            st.error(f"Erro ao listar caixas: {e}")
+            return []
+
+    def selecionar_caixa(self, caixa="INBOX"):
+        """Seleciona uma caixa de entrada específica"""
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return False
+
+        try:
+            status, messages = self.connection.select(caixa)
+            if status == 'OK':
+                st.success(f"Caixa '{caixa}' selecionada")
+                return True
+            else:
+                st.error(f"Erro ao selecionar caixa '{caixa}'")
+                return False
+        except Exception as e:
+            st.error(f"Erro ao selecionar caixa: {e}")
+            return False
+
+    def buscar_emails(self, criterio="ALL", limite=10):
+        """
+        Busca e-mails na caixa selecionada
+
+        Args:
+            criterio: Critério de busca (ALL, UNSEEN, FROM "email@exemplo.com", etc.)
+            limite: Número máximo de e-mails a retornar
+        """
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return []
+
+        try:
+            status, message_numbers = self.connection.search(None, criterio)
+            if status != 'OK':
+                st.error("Erro ao buscar e-mails")
+                return []
+
+            email_list = message_numbers[0].split()
+            emails = []
+
+            # Pegar apenas os últimos 'limite' e-mails
+            for num in email_list[-limite:]:
+                try:
+                    status, msg_data = self.connection.fetch(num, '(RFC822)')
+                    if status == 'OK':
+                        email_body = msg_data[0][1]
+                        email_message = email.message_from_bytes(email_body)
+
+                        # Extrair informações do e-mail
+                        email_info = self._extrair_info_email(
+                            email_message, num)
+                        emails.append(email_info)
+
+                except Exception as e:
+                    st.warning(f"Erro ao processar e-mail {num}: {e}")
+                    continue
+
+            return emails
+
+        except Exception as e:
+            st.error(f"Erro ao buscar e-mails: {e}")
+            return []
+
+    def _extrair_info_email(self, email_message, num):
+        """Extrai informações básicas de um e-mail"""
+        try:
+            # Assunto
+            subject = decode_header(email_message["subject"])[0][0]
+            if isinstance(subject, bytes):
+                subject = subject.decode()
+
+            # Remetente
+            from_addr = decode_header(email_message["from"])[0][0]
+            if isinstance(from_addr, bytes):
+                from_addr = from_addr.decode()
+
+            # Data
+            date_str = email_message["date"]
+            if date_str:
+                try:
+                    date_obj = parsedate_to_datetime(date_str)
+                    date_formatted = date_obj.strftime("%d/%m/%Y %H:%M")
+                except:
+                    date_formatted = date_str
+            else:
+                date_formatted = "Data não disponível"
+
+            # Verificar se tem anexos
+            has_attachments = self._tem_anexos(email_message)
+
+            return {
+                'numero': num.decode() if isinstance(num, bytes) else str(num),
+                'assunto': subject or "Sem assunto",
+                'remetente': from_addr or "Remetente desconhecido",
+                'data': date_formatted,
+                'tem_anexos': has_attachments,
+                'mensagem': email_message
+            }
+
+        except Exception as e:
+            st.warning(f"Erro ao extrair informações do e-mail: {e}")
+            return {
+                'numero': num.decode() if isinstance(num, bytes) else str(num),
+                'assunto': "Erro ao processar",
+                'remetente': "Desconhecido",
+                'data': "Desconhecida",
+                'tem_anexos': False,
+                'mensagem': email_message
+            }
+
+    def _tem_anexos(self, email_message):
+        """Verifica se o e-mail tem anexos"""
+        for part in email_message.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            if part.get('Content-Disposition') is not None:
+                return True
+        return False
+
+    def ler_email_completo(self, numero_email):
+        """Lê o conteúdo completo de um e-mail específico"""
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return None
+
+        try:
+            status, msg_data = self.connection.fetch(numero_email, '(RFC822)')
+            if status != 'OK':
+                st.error("Erro ao buscar e-mail")
+                return None
+
+            email_body = msg_data[0][1]
+            email_message = email.message_from_bytes(email_body)
+
+            # Extrair informações completas
+            email_completo = self._extrair_info_email(
+                email_message, numero_email)
+
+            # Extrair corpo do e-mail
+            email_completo['corpo_texto'] = self._extrair_corpo_texto(
+                email_message)
+            email_completo['corpo_html'] = self._extrair_corpo_html(
+                email_message)
+            email_completo['anexos'] = self._extrair_anexos(email_message)
+
+            return email_completo
+
+        except Exception as e:
+            st.error(f"Erro ao ler e-mail completo: {e}")
+            return None
+
+    def _extrair_corpo_texto(self, email_message):
+        """Extrai o corpo do e-mail em texto simples"""
+        if email_message.is_multipart():
+            for part in email_message.walk():
+                if part.get_content_type() == "text/plain":
+                    try:
+                        return part.get_payload(decode=True).decode()
+                    except:
+                        return part.get_payload()
+        else:
+            try:
+                return email_message.get_payload(decode=True).decode()
+            except:
+                return email_message.get_payload()
+        return "Corpo não disponível"
+
+    def _extrair_corpo_html(self, email_message):
+        """Extrai o corpo do e-mail em HTML"""
+        if email_message.is_multipart():
+            for part in email_message.walk():
+                if part.get_content_type() == "text/html":
+                    try:
+                        return part.get_payload(decode=True).decode()
+                    except:
+                        return part.get_payload()
+        else:
+            if email_message.get_content_type() == "text/html":
+                try:
+                    return email_message.get_payload(decode=True).decode()
+                except:
+                    return email_message.get_payload()
+        return None
+
+    def _extrair_anexos(self, email_message):
+        """Extrai anexos do e-mail"""
+        anexos = []
+
+        for part in email_message.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            if part.get('Content-Disposition') is None:
+                continue
+
+            filename = part.get_filename()
+            if filename:
+                # Decodificar nome do arquivo se necessário
+                if isinstance(filename, bytes):
+                    filename = filename.decode()
+
+                # Extrair conteúdo do anexo
+                try:
+                    anexo_content = part.get_payload(decode=True)
+                    anexos.append({
+                        'nome': filename,
+                        'conteudo': anexo_content,
+                        'tipo': part.get_content_type(),
+                        'tamanho': len(anexo_content) if anexo_content else 0
+                    })
+                except Exception as e:
+                    st.warning(f"Erro ao extrair anexo {filename}: {e}")
+
+        return anexos
+
+    def marcar_como_lido(self, numero_email):
+        """Marca um e-mail como lido"""
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return False
+
+        try:
+            self.connection.store(numero_email, '+FLAGS', '\\Seen')
+            st.success("E-mail marcado como lido")
+            return True
+        except Exception as e:
+            st.error(f"Erro ao marcar e-mail como lido: {e}")
+            return False
+
+    def deletar_email(self, numero_email):
+        """Deleta um e-mail"""
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return False
+
+        try:
+            self.connection.store(numero_email, '+FLAGS', '\\Deleted')
+            self.connection.expunge()
+            st.success("E-mail deletado")
+            return True
+        except Exception as e:
+            st.error(f"Erro ao deletar e-mail: {e}")
+            return False
+
+    def buscar_emails_por_data(self, data_inicio, data_fim, limite=50):
+        """
+        Busca e-mails por período de data
+
+        Args:
+            data_inicio: Data de início (datetime)
+            data_fim: Data de fim (datetime)
+            limite: Número máximo de e-mails
+        """
+        if not self.connection:
+            st.error("Não conectado ao servidor IMAP")
+            return []
+
+        try:
+            # Formatar datas para critério IMAP
+            data_inicio_str = data_inicio.strftime("%d-%b-%Y")
+            data_fim_str = data_fim.strftime("%d-%b-%Y")
+
+            criterio = f'SINCE "{data_inicio_str}" BEFORE "{data_fim_str}"'
+            return self.buscar_emails(criterio, limite)
+
+        except Exception as e:
+            st.error(f"Erro ao buscar e-mails por data: {e}")
+            return []
 
 
 class EmailAgent:
@@ -17,6 +365,10 @@ class EmailAgent:
         self.destinatarios = destinatarios
         self.destinatario_juridico = destinatario_juridico
         self.destinatario_juridico_um = destinatario_juridico_um
+
+        # Criar agente IMAP com as mesmas credenciais
+        self.imap_agent = IMAPAgent(smtp_host.replace(
+            'smtp', 'imap'), 993, smtp_user, smtp_pass)
 
     def enviar_notificacao_documento_busca(self, busca_data, anexos, consultor_nome):
         """
@@ -153,10 +505,17 @@ class EmailAgent:
                         filename=anexo[1]
                     )
 
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
 
             st.success(
                 f"E-mail de notificação enviado com sucesso para: {', '.join(destinatarios)}")
@@ -167,37 +526,178 @@ class EmailAgent:
             logging.error(f"Erro ao enviar e-mail de notificação: {e}")
             return False
 
-    def send_email(self, form_data):
+    def send_email_confirmacao_consultor(self, consultor_email: str, form_data: dict):
         """
-        Envia um e-mail com os dados do formulário de busca para os destinatários configurados.
+        Envia e-mail de confirmação para o consultor informando que sua busca foi enviada.
         """
+        if not consultor_email or not consultor_email.strip():
+            st.warning(
+                "E-mail do consultor não disponível para envio de confirmação.")
+            return False
+
+        # Limpar form_data para remover objetos não serializáveis
+        def clean_form_data(data):
+            if isinstance(data, dict):
+                cleaned = {}
+                for key, value in data.items():
+                    # Pular objetos UploadedFile e outros não serializáveis
+                    if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                        continue
+                    elif isinstance(value, (dict, list)):
+                        cleaned[key] = clean_form_data(value)
+                    elif isinstance(value, (str, int, float, bool, type(None))):
+                        cleaned[key] = value
+                    else:
+                        # Converter outros tipos para string
+                        cleaned[key] = str(value)
+                return cleaned
+            elif isinstance(data, list):
+                return [clean_form_data(item) for item in data if not hasattr(item, 'getvalue')]
+            else:
+                return data
+
+        # Limpar form_data antes de processar
+        clean_data = clean_form_data(form_data)
+
         # Extrair dados principais
-        tipo_busca = form_data.get('tipo_busca', '')
-        consultor = form_data.get('consultor', '')
-        cpf_cnpj_cliente = form_data.get('cpf_cnpj_cliente', '')
-        nome_cliente = form_data.get('nome_cliente', '')
-        marcas = form_data.get('marcas', [])
+        tipo_busca = clean_data.get('tipo_busca', '')
+        consultor = clean_data.get('consultor', '')
+        cpf_cnpj_cliente = clean_data.get('cpf_cnpj_cliente', '')
+        nome_cliente = clean_data.get('nome_cliente', '')
+        marcas = clean_data.get('marcas', [])
         nome_marca = ''
         classes = ''
         if marcas and isinstance(marcas, list) and len(marcas) > 0 and isinstance(marcas[0], dict):
             nome_marca = marcas[0].get('marca', '')
             classes = ', '.join([c.get('classe', '') for c in marcas[0].get(
                 'classes', []) if c.get('classe', '')])
-        data_br = form_data.get('data', '')
+        data_br = clean_data.get('data', '')
+
+        subject = f"Confirmação - Busca de marca {tipo_busca} enviada - {nome_marca}"
+
+        # Montar corpo HTML específico para o consultor
+        body_html = f"""
+        <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
+            <h3>✅ Confirmação de Envio - Busca de Marca</h3>
+            <p>Olá <b>{consultor}</b>,</p>
+            <p>Sua solicitação de busca de marca foi <b>enviada com sucesso</b> e está sendo processada.</p>
+            
+            <div style='background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;'>
+                <h4>📋 Detalhes da Busca:</h4>
+                <p><b>Data:</b> {data_br}</p>
+                <p><b>Tipo de busca:</b> {tipo_busca}</p>
+                <p><b>Cliente:</b> {nome_cliente}</p>
+                <p><b>CPF/CNPJ:</b> {cpf_cnpj_cliente}</p>
+                <p><b>Marca:</b> {nome_marca}</p>
+                <p><b>Classes:</b> {classes}</p>
+            </div>
+            
+            <p>📧 <b>Notificação:</b> Um e-mail foi enviado para a equipe responsável com todos os detalhes da sua solicitação.</p>
+            
+            <p>⏱️ <b>Prazo:</b> Você será notificado assim que a busca for concluída.</p>
+            
+            <p>Agradecemos sua confiança!</p>
+            
+            <hr style='margin: 20px 0; border: 1px solid #ccc;'>
+            <p style='font-size: 10pt; color: #666;'>
+                Este é um e-mail automático. Por favor, não responda a esta mensagem.
+            </p>
+        </div>
+        """
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = self.smtp_user
+        msg["To"] = consultor_email
+        msg.set_content(body_html, subtype='html')
+
+        try:
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+
+            st.success(
+                f"✅ E-mail de confirmação enviado para: {consultor_email}")
+            return True
+        except Exception as e:
+            st.error(f"Erro ao enviar e-mail de confirmação: {e}")
+            logging.error(f"Erro ao enviar e-mail de confirmação: {e}")
+            return False
+
+    def send_email(self, form_data):
+        """
+        Envia um e-mail com os dados do formulário de busca para os destinatários configurados.
+        """
+        if not self.destinatarios:
+            st.warning("Nenhum destinatário configurado para envio de e-mail")
+            return
+
+        # Limpar form_data para remover objetos não serializáveis
+        def clean_form_data(data):
+            if isinstance(data, dict):
+                cleaned = {}
+                for key, value in data.items():
+                    # Pular objetos UploadedFile e outros não serializáveis
+                    if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                        continue
+                    elif isinstance(value, (dict, list)):
+                        cleaned[key] = clean_form_data(value)
+                    elif isinstance(value, (str, int, float, bool, type(None))):
+                        cleaned[key] = value
+                    else:
+                        # Converter outros tipos para string
+                        cleaned[key] = str(value)
+                return cleaned
+            elif isinstance(data, list):
+                return [clean_form_data(item) for item in data if not hasattr(item, 'getvalue')]
+            else:
+                return data
+
+        # Limpar form_data antes de processar
+        clean_data = clean_form_data(form_data)
+
+        # Extrair dados principais
+        tipo_busca = clean_data.get('tipo_busca', '')
+        consultor = clean_data.get('consultor', '')
+        cpf_cnpj_cliente = clean_data.get('cpf_cnpj_cliente', '')
+        nome_cliente = clean_data.get('nome_cliente', '')
+        marcas = clean_data.get('marcas', [])
+        nome_marca = ''
+        classes = ''
+        if marcas and isinstance(marcas, list) and len(marcas) > 0 and isinstance(marcas[0], dict):
+            nome_marca = marcas[0].get('marca', '')
+            classes = ', '.join([c.get('classe', '') for c in marcas[0].get(
+                'classes', []) if c.get('classe', '')])
+        data_br = clean_data.get('data', '')
         # Montar título conforme solicitado, incluindo a data brasileira e dados do cliente
         subject = f"Pedido de busca de marca {tipo_busca} - Data: {data_br} - Marca: {nome_marca} - Classes: {classes} - Cliente: {nome_cliente} - Consultor: {consultor}"
         # Montar corpo HTML
-        body_html = self._format_body_html(form_data)
+        body_html = self.format_body_html(clean_data)
         msg = EmailMessage()
         msg["Subject"] = subject
         msg["From"] = self.smtp_user
         msg["To"] = ", ".join(self.destinatarios)
         msg.set_content(body_html, subtype='html')
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(
                 f"E-mail enviado com sucesso para: {', '.join(self.destinatarios)}")
         except Exception as e:
@@ -216,10 +716,17 @@ class EmailAgent:
             msg.add_attachment(anexo_bytes, maintype=maintype,
                                subtype=subtype, filename=nome_arquivo)
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(f"E-mail enviado com sucesso para: {destinatario}")
         except Exception as e:
             st.error(f"Erro ao enviar e-mail: {e}")
@@ -240,10 +747,17 @@ class EmailAgent:
             msg.add_attachment(anexo_bytes, maintype=maintype,
                                subtype=subtype, filename=nome_arquivo)
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(f"E-mail enviado com sucesso para: {destinatario}")
         except Exception as e:
             st.error(f"Erro ao enviar e-mail: {e}")
@@ -279,19 +793,43 @@ class EmailAgent:
             # Padrão para outros tipos de arquivo
             return "application", "octet-stream"
 
-    def _format_body_html(self, form_data):
+    def format_body_html(self, form_data):
         """
         Formata o corpo do e-mail em HTML com base nos dados do formulário.
         Agora cada classe aparece separada e as especificações aparecem em linha, separadas por vírgula.
         Aplica limpeza automática de quebras de palavras.
         """
-        data = form_data.get('data', '')
-        tipo_busca = form_data.get('tipo_busca', '')
-        consultor = form_data.get('consultor', '')
-        consultor_email = form_data.get('consultor_email', '')
-        cpf_cnpj_cliente = form_data.get('cpf_cnpj_cliente', '')
-        nome_cliente = form_data.get('nome_cliente', '')
-        marcas = form_data.get('marcas', [])
+        # Limpar form_data para remover objetos não serializáveis
+        def clean_form_data(data):
+            if isinstance(data, dict):
+                cleaned = {}
+                for key, value in data.items():
+                    # Pular objetos UploadedFile e outros não serializáveis
+                    if hasattr(value, 'getvalue') or hasattr(value, 'read'):
+                        continue
+                    elif isinstance(value, (dict, list)):
+                        cleaned[key] = clean_form_data(value)
+                    elif isinstance(value, (str, int, float, bool, type(None))):
+                        cleaned[key] = value
+                    else:
+                        # Converter outros tipos para string
+                        cleaned[key] = str(value)
+                return cleaned
+            elif isinstance(data, list):
+                return [clean_form_data(item) for item in data if not hasattr(item, 'getvalue')]
+            else:
+                return data
+
+        # Limpar form_data antes de processar
+        clean_data = clean_form_data(form_data)
+
+        data = clean_data.get('data', '')
+        tipo_busca = clean_data.get('tipo_busca', '')
+        consultor = clean_data.get('consultor', '')
+        consultor_email = clean_data.get('consultor_email', '')
+        cpf_cnpj_cliente = clean_data.get('cpf_cnpj_cliente', '')
+        nome_cliente = clean_data.get('nome_cliente', '')
+        marcas = clean_data.get('marcas', [])
         html = f"""
         <div style='font-family: Arial, sans-serif; font-size: 12pt;'>
             <b>Data:</b> {data}<br>
@@ -303,9 +841,19 @@ class EmailAgent:
         """
         if marcas:
             html += f"<b>Marca:</b> {marcas[0].get('marca', '')}<br>"
-            for jdx, classe in enumerate(marcas[0].get('classes', []), 1):
-                classe_num = classe.get('classe', '')
-                especificacao = classe.get('especificacao', '')
+
+            # Filtrar apenas classes que foram preenchidas
+            classes_preenchidas = []
+            for classe in marcas[0].get('classes', []):
+                classe_num = classe.get('classe', '').strip()
+                especificacao = classe.get('especificacao', '').strip()
+
+                # Incluir apenas se tanto a classe quanto a especificação foram preenchidas
+                if classe_num and especificacao:
+                    classes_preenchidas.append((classe_num, especificacao))
+
+            # Exibir apenas as classes preenchidas
+            for jdx, (classe_num, especificacao) in enumerate(classes_preenchidas, 1):
                 especs = re.split(r'[;\n]', especificacao)
                 especs = [self._limpar_quebras_palavras(
                     e.strip()) for e in especs if e.strip()]
@@ -378,10 +926,17 @@ class EmailAgent:
         msg.set_content(body_html, subtype='html')
 
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(
                 f"E-mail de notificação enviado com sucesso para: {destinatario}")
             return True
@@ -474,10 +1029,17 @@ class EmailAgent:
                     logging.warning(f"Anexo inválido ignorado: {anexo}")
 
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(
                 f"E-mail com documentos enviado com sucesso para: {destinatario}")
             return True
@@ -586,10 +1148,17 @@ class EmailAgent:
                     logging.warning(f"Anexo inválido ignorado: {anexo}")
 
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(
                 f"E-mail com documentos enviado com sucesso para: {email_destino}")
 
@@ -800,10 +1369,17 @@ class EmailAgent:
                     logging.warning(f"Anexo inválido ignorado: {anexo}")
 
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_pass)
-                server.send_message(msg)
+            # Usar SMTP_SSL para porta 465 (Hostinger)
+            if self.smtp_port == 465:
+                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port) as server:
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
+            else:
+                # Usar SMTP normal com STARTTLS para outras portas
+                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.smtp_user, self.smtp_pass)
+                    server.send_message(msg)
             st.success(
                 f"E-mail para aprovação enviado com sucesso para: {destinatario}")
             return True
